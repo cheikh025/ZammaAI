@@ -170,10 +170,10 @@ def initial_board() -> List[int]:
 
 _PIECE_CHAR = {
     EMPTY: ".",
-    BLACK_MAN: "B",
-    BLACK_KING: "b",
-    WHITE_MAN: "W",
-    WHITE_KING: "w",
+    BLACK_MAN: "b",
+    BLACK_KING: "B",
+    WHITE_MAN: "w",
+    WHITE_KING: "W",
 }
 
 
@@ -186,11 +186,11 @@ def display_board(board: List[int]) -> str:
 
     Example output (initial position):
 
-        4 | W  W  W  W  W
-        3 | W  W  W  W  W
-        2 | B  B  .  W  W
-        1 | B  B  B  B  B
-        0 | B  B  B  B  B
+        4 | w  w  w  w  w
+        3 | w  w  w  w  w
+        2 | b  b  .  w  w
+        1 | b  b  b  b  b
+        0 | b  b  b  b  b
           +--------------
             0  1  2  3  4
     """

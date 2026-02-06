@@ -35,6 +35,7 @@ from khreibga.move_gen import (
 )
 from khreibga.captures import (
     get_capture_first_hops,
+    get_piece_capture_first_hops,
     get_action_mask as captures_get_action_mask,
     execute_hop,
     find_all_capture_chains,
@@ -252,14 +253,10 @@ class GameState:
         """Check if the piece at sq can continue capturing.
 
         Returns list of (src, dst) capture hops from that square.
-        Uses the module-level get_capture_first_hops to find all capture
-        hops for the current player, then filters to those from sq.
+        Uses piece-local capture generation because mid-chain rules lock the
+        active piece; global majority across other pieces must not apply here.
         """
-        # Get all capture first hops for the current player
-        all_hops = get_capture_first_hops(self.board, self.current_player)
-
-        # Filter to only those starting from sq
-        return [(s, d) for s, d in all_hops if s == sq]
+        return get_piece_capture_first_hops(self.board, self.current_player, sq)
 
     # ------------------------------------------------------------------
     # Simple move execution

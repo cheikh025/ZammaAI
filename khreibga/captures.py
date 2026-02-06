@@ -256,6 +256,28 @@ def find_all_capture_chains(
 
 
 # ---------------------------------------------------------------------------
+# Piece-local capture enumeration
+# ---------------------------------------------------------------------------
+
+def find_piece_capture_chains(
+    board: List[int],
+    player: int,
+    sq: int,
+) -> List[List[Tuple[int, int]]]:
+    """
+    Return capture chains for exactly one piece at *sq*.
+
+    Used for mid-chain continuation where only the active piece is allowed to
+    move; global majority filtering across other pieces must not interfere.
+    """
+    if not _is_player_piece(board, sq, player):
+        return []
+    if _is_king(board, sq):
+        return find_king_captures(board, sq, player)
+    return find_man_captures(board, sq, player)
+
+
+# ---------------------------------------------------------------------------
 # Majority rule
 # ---------------------------------------------------------------------------
 
@@ -289,6 +311,31 @@ def get_capture_first_hops(
     Duplicates are removed (multiple chains may share the same first hop).
     """
     chains = find_all_capture_chains(board, player)
+    best = apply_majority_rule(chains)
+
+    seen: Set[Tuple[int, int]] = set()
+    hops: List[Tuple[int, int]] = []
+    for chain in best:
+        first = chain[0]
+        if first not in seen:
+            seen.add(first)
+            hops.append(first)
+    return hops
+
+
+def get_piece_capture_first_hops(
+    board: List[int],
+    player: int,
+    sq: int,
+) -> List[Tuple[int, int]]:
+    """
+    Return legal first hops for a specific piece at *sq* after piece-local
+    majority filtering.
+
+    This is used while a chain is already in progress and the active piece is
+    locked for continuation.
+    """
+    chains = find_piece_capture_chains(board, player, sq)
     best = apply_majority_rule(chains)
 
     seen: Set[Tuple[int, int]] = set()

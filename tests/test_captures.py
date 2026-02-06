@@ -23,10 +23,12 @@ from khreibga.captures import (
     apply_majority_rule,
     execute_hop,
     find_all_capture_chains,
+    find_piece_capture_chains,
     find_king_captures,
     find_man_captures,
     get_action_mask,
     get_capture_first_hops,
+    get_piece_capture_first_hops,
 )
 
 
@@ -212,6 +214,36 @@ class TestMajorityRule:
             src != 4 for src, _ in first_hops
         ), f"Piece at 4 should not appear: {first_hops}"
 
+    def test_majority_tie_keeps_all_best_first_hops(self):
+        """If multiple sequences tie for max captures, all tied first hops
+        remain legal.
+
+        Board is chosen so BLACK has two distinct 2-capture sequences:
+          - 0 -> 12 -> 4
+          - 2 -> 4 -> 12
+        and no longer chain exists.
+        """
+        board = [
+            BLACK_MAN, BLACK_MAN, BLACK_MAN, WHITE_MAN, EMPTY,
+            EMPTY, WHITE_MAN, EMPTY, WHITE_MAN, EMPTY,
+            WHITE_MAN, WHITE_MAN, EMPTY, EMPTY, EMPTY,
+            EMPTY, EMPTY, EMPTY, EMPTY, EMPTY,
+            EMPTY, BLACK_MAN, EMPTY, WHITE_MAN, EMPTY,
+        ]
+
+        chains = find_all_capture_chains(board, BLACK)
+        best = apply_majority_rule(chains)
+        assert best, "Expected capture chains"
+        assert all(len(c) == 2 for c in best), f"Expected only len-2 chains: {best}"
+
+        first_hops = set(get_capture_first_hops(board, BLACK))
+        assert (0, 12) in first_hops
+        assert (2, 4) in first_hops
+
+        mask = get_action_mask(board, BLACK)
+        assert mask[0 * NUM_SQUARES + 12] == 1
+        assert mask[2 * NUM_SQUARES + 4] == 1
+
 
 # ---------------------------------------------------------------------------
 # Immediate removal opens a path
@@ -299,6 +331,31 @@ class TestImmediateRemoval:
         hops = {c[0] for c in chains}
         assert (12, 2) in hops, f"Expected (12,2) in {hops}"
         assert (12, 22) in hops, f"Expected (12,22) in {hops}"
+
+    def test_king_chain_can_recross_origin_line(self):
+        """Immediate removal can open a line so a king crosses a previously
+        occupied square later in the same sequence.
+
+        Sequence checked here:
+          12 -> 22 (captures 17), then 22 -> 2 (captures 7)
+        The second hop path passes through square 12 (the chain origin).
+        """
+        board = empty_board()
+        board[12] = BLACK_KING
+        board[17] = WHITE_MAN
+        board[7] = WHITE_MAN
+
+        chains = find_king_captures(board, 12, BLACK)
+        assert any(c[:2] == [(12, 22), (22, 2)] for c in chains), (
+            f"Expected recross chain [(12,22),(22,2)] in {chains}"
+        )
+
+        # Piece-local continuation should preserve only the active-piece hops.
+        board_after_first, _ = execute_hop(board, 12, 22, BLACK)
+        piece_chains = find_piece_capture_chains(board_after_first, BLACK, 22)
+        assert piece_chains, "Expected continuation chains for active piece"
+        piece_hops = set(get_piece_capture_first_hops(board_after_first, BLACK, 22))
+        assert (22, 2) in piece_hops
 
 
 # ---------------------------------------------------------------------------

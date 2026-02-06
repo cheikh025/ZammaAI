@@ -1,0 +1,4 @@
+*.pdf
+*.md
+*.pyc
+__pycache__/

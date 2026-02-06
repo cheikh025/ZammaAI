@@ -326,8 +326,8 @@ class TestDisplay:
     def test_display_contains_pieces(self):
         board = initial_board()
         result = display_board(board)
-        assert "B" in result
-        assert "W" in result
+        assert "b" in result
+        assert "w" in result
         assert "." in result
 
     def test_display_row_order(self):

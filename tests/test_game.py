@@ -399,6 +399,72 @@ class TestMultiStepChain:
             assert gs.chain_piece is None, "chain_piece should be cleared"
 
 
+class TestMultiStepChainIntegration:
+    """Integration checks with real capture logic (no mocks)."""
+
+    def test_active_chain_piece_continues_even_if_other_piece_has_longer_global_chain(self):
+        """Regression for a bug where mid-chain continuation was derived from
+        global majority hops instead of active-piece-local hops.
+        """
+        from khreibga.captures import (
+            execute_hop,
+            get_capture_first_hops,
+            get_piece_capture_first_hops,
+        )
+        from khreibga.game import GameState, compute_zobrist_hash
+
+        # Encoded board:
+        #   BLACK: king at 0, man at 2, man at 7, man at 13
+        #   WHITE: men at 3,8,18,20 and kings at 9,15,22
+        board = [
+            BLACK_KING, EMPTY, BLACK_MAN, WHITE_MAN, EMPTY,
+            EMPTY, EMPTY, BLACK_MAN, WHITE_MAN, WHITE_KING,
+            EMPTY, EMPTY, EMPTY, BLACK_MAN, EMPTY,
+            WHITE_KING, EMPTY, EMPTY, WHITE_MAN, EMPTY,
+            WHITE_MAN, EMPTY, WHITE_KING, EMPTY, EMPTY,
+        ]
+
+        gs = GameState.__new__(GameState)
+        gs.board = board[:]
+        gs.current_player = BLACK
+        gs.chain_piece = None
+        gs.half_move_clock = 0
+        gs.move_count = 0
+        gs.history = {}
+        gs.done = False
+        gs.winner = None
+        gs.current_hash = compute_zobrist_hash(gs.board, gs.current_player)
+        gs.history[gs.current_hash] = 1
+
+        first_action = _action(0, 24)
+        mask = gs.get_action_mask()
+        assert mask[first_action] == 1, "Expected 0->24 to be legal"
+
+        # Show why piece-local continuation is required:
+        # after 0->24, global majority first-hops come from another piece.
+        board_after_first, _ = execute_hop(board, 0, 24, BLACK)
+        global_hops = get_capture_first_hops(board_after_first, BLACK)
+        assert global_hops, "Expected global capture hops"
+        assert all(src != 24 for src, _ in global_hops), (
+            f"Global hops unexpectedly include active piece: {global_hops}"
+        )
+
+        piece_hops = get_piece_capture_first_hops(board_after_first, BLACK, 24)
+        assert piece_hops, "Active piece must still have continuation hops"
+        assert all(src == 24 for src, _ in piece_hops)
+
+        # Engine step should keep BLACK to move and lock chain_piece=24.
+        gs.step(first_action)
+        assert gs.current_player == BLACK, "Player must not switch mid-chain"
+        assert gs.chain_piece == 24, "Active chain piece should remain locked"
+
+        continuation_mask = gs.get_action_mask()
+        assert any(
+            continuation_mask[idx] == 1 and idx // NUM_SQUARES == 24
+            for idx in range(NUM_SQUARES * NUM_SQUARES)
+        ), "Continuation mask must contain moves from the active chain piece"
+
+
 # ===================================================================
 # Promotion
 # ===================================================================
