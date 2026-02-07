@@ -259,6 +259,8 @@ class Trainer:
         # Counters
         self.iteration: int = 0
         self.training_step: int = 0
+        self.eval_history: list[dict[str, float | int | bool]] = []
+        self.last_eval_metrics: dict[str, float | int | bool] | None = None
 
     # ------------------------------------------------------------------
     # Main loop
@@ -291,16 +293,40 @@ class Trainer:
             if self.iteration % cfg.eval_interval == 0:
                 self.model.eval()
                 self.best_model.eval()
-                win_rate = evaluate_models(
+                eval_result = evaluate_models(
                     self.model,
                     self.best_model,
                     num_games=cfg.eval_games,
                     num_simulations=cfg.eval_simulations,
                     c_puct=cfg.c_puct,
                     device=self.device,
+                    return_details=True,
                 )
+
+                # Backward-compatible fallback in case a mocked evaluator
+                # returns only a float win-rate.
+                if isinstance(eval_result, dict):
+                    win_rate = float(eval_result.get("win_rate", 0.0))
+                    eval_metrics: dict[str, float | int | bool] = {
+                        "iteration": int(self.iteration),
+                        "promoted": False,
+                        **eval_result,
+                    }
+                else:
+                    win_rate = float(eval_result)
+                    eval_metrics = {
+                        "iteration": int(self.iteration),
+                        "promoted": False,
+                        "num_games": int(cfg.eval_games),
+                        "win_rate": float(win_rate),
+                    }
+
                 if win_rate > cfg.win_threshold:
                     self.best_model = self._clone_model()
+                    eval_metrics["promoted"] = True
+
+                self.last_eval_metrics = eval_metrics
+                self.eval_history.append(eval_metrics)
 
     def _run_self_play_iteration(self) -> None:
         """Generate self-play data (sequential or process-parallel)."""
@@ -473,6 +499,7 @@ class Trainer:
             "optimizer_state_dict": self.optimizer.state_dict(),
             "iteration": self.iteration,
             "training_step": self.training_step,
+            "eval_history": self.eval_history,
             "replay_buffer": self.replay_buffer.metadata(),
             "device": str(self.device),
         }
@@ -529,6 +556,10 @@ class Trainer:
 
         self.iteration = int(checkpoint.get("iteration", 0))
         self.training_step = int(checkpoint.get("training_step", 0))
+        self.eval_history = list(checkpoint.get("eval_history", []))
+        self.last_eval_metrics = (
+            self.eval_history[-1] if self.eval_history else None
+        )
 
         rb_meta = checkpoint.get("replay_buffer", {})
         rb_max_size = int(rb_meta.get("max_size", self.config.buffer_size))

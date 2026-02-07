@@ -10,6 +10,7 @@ Provides:
 
 from __future__ import annotations
 
+import math
 import numpy as np
 import torch
 
@@ -126,6 +127,18 @@ def self_play_game(
 # Model evaluation
 # ---------------------------------------------------------------------------
 
+def _elo_diff_from_score_rate(score_rate: float) -> float:
+    """Estimate Elo difference from expected score rate.
+
+    Returns +/-inf for perfect or zero score rates.
+    """
+    if score_rate <= 0.0:
+        return float("-inf")
+    if score_rate >= 1.0:
+        return float("inf")
+    return -400.0 * math.log10((1.0 / score_rate) - 1.0)
+
+
 def evaluate_models(
     new_model: KhreibagaNet,
     old_model: KhreibagaNet,
@@ -133,7 +146,8 @@ def evaluate_models(
     num_simulations: int = 200,
     c_puct: float = 1.0,
     device: torch.device | None = None,
-) -> float:
+    return_details: bool = False,
+) -> float | dict[str, float | int]:
     """Pit *new_model* against *old_model* and return new model's win rate.
 
     Colours are alternated: even-indexed games have new_model as BLACK,
@@ -154,10 +168,14 @@ def evaluate_models(
 
     Returns
     -------
-    float
-        Win rate of *new_model* in ``[0, 1]``.
+    float or dict
+        If ``return_details=False`` (default), returns win rate in ``[0, 1]``.
+        If ``return_details=True``, returns metrics:
+        ``wins``, ``losses``, ``draws``, ``num_games``, ``win_rate``,
+        ``draw_rate``, ``loss_rate``, ``score_rate``, ``elo_diff``.
     """
     new_wins = 0
+    draws = 0
 
     for game_idx in range(num_games):
         new_is_black = (game_idx % 2 == 0)
@@ -186,5 +204,40 @@ def evaluate_models(
         if env.winner is not None:
             if (env.winner == BLACK) == new_is_black:
                 new_wins += 1
+        else:
+            draws += 1
+    if num_games <= 0:
+        details = {
+            "wins": 0,
+            "losses": 0,
+            "draws": 0,
+            "num_games": 0,
+            "win_rate": 0.0,
+            "draw_rate": 0.0,
+            "loss_rate": 0.0,
+            "score_rate": 0.0,
+            "elo_diff": float("-inf"),
+        }
+        return details if return_details else 0.0
 
-    return new_wins / num_games if num_games > 0 else 0.0
+    losses = num_games - new_wins - draws
+    win_rate = new_wins / num_games
+    draw_rate = draws / num_games
+    loss_rate = losses / num_games
+    score_rate = (new_wins + 0.5 * draws) / num_games
+    elo_diff = _elo_diff_from_score_rate(score_rate)
+
+    if return_details:
+        return {
+            "wins": int(new_wins),
+            "losses": int(losses),
+            "draws": int(draws),
+            "num_games": int(num_games),
+            "win_rate": float(win_rate),
+            "draw_rate": float(draw_rate),
+            "loss_rate": float(loss_rate),
+            "score_rate": float(score_rate),
+            "elo_diff": float(elo_diff),
+        }
+
+    return win_rate

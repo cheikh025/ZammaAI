@@ -382,6 +382,32 @@ class TestEvaluateModels:
         # With only 4 games and 2 sims, just check it returns valid range
         assert 0.0 <= win_rate <= 1.0
 
+    def test_return_details_contains_elo_tracking_metrics(self, device):
+        model_a = KhreibagaNet().to(device)
+        model_b = KhreibagaNet().to(device)
+        model_a.eval()
+        model_b.eval()
+
+        details = evaluate_models(
+            model_a, model_b,
+            num_games=4, num_simulations=2,
+            device=device,
+            return_details=True,
+        )
+        assert isinstance(details, dict)
+        assert details["num_games"] == 4
+        assert details["wins"] + details["losses"] + details["draws"] == 4
+        assert 0.0 <= details["win_rate"] <= 1.0
+        assert 0.0 <= details["draw_rate"] <= 1.0
+        assert 0.0 <= details["loss_rate"] <= 1.0
+        assert np.isclose(
+            details["win_rate"] + details["draw_rate"] + details["loss_rate"],
+            1.0,
+            atol=1e-6,
+        )
+        assert 0.0 <= details["score_rate"] <= 1.0
+        assert np.isfinite(details["elo_diff"]) or np.isinf(details["elo_diff"])
+
 
 # ---------------------------------------------------------------------------
 # End-to-end mini training loop
@@ -590,6 +616,7 @@ class TestTrainerRunOrchestration:
         assert eval_calls[0]["num_simulations"] == cfg.eval_simulations
         assert eval_calls[0]["c_puct"] == cfg.c_puct
         assert eval_calls[0]["device"] == device
+        assert eval_calls[0]["return_details"] is True
         assert trainer.best_model is not original_best
 
     def test_eval_gate_does_not_promote_at_exact_threshold(
@@ -617,6 +644,45 @@ class TestTrainerRunOrchestration:
 
         trainer.run(num_iterations=1)
         assert trainer.best_model is original_best
+
+    def test_eval_metrics_tracked_without_affecting_gate(
+        self, device, monkeypatch,
+    ):
+        cfg = TrainingConfig(
+            games_per_iteration=1,
+            batch_size=9999,
+            eval_interval=1,
+            win_threshold=0.55,
+            num_iterations=1,
+        )
+        trainer = Trainer(config=cfg, device=device)
+        one = self._single_example()
+        monkeypatch.setattr(
+            "khreibga.trainer.self_play_game",
+            lambda *args, **kwargs: [one],
+        )
+        monkeypatch.setattr(
+            "khreibga.trainer.evaluate_models",
+            lambda *args, **kwargs: {
+                "wins": 3,
+                "losses": 1,
+                "draws": 0,
+                "num_games": 4,
+                "win_rate": 0.75,
+                "draw_rate": 0.0,
+                "loss_rate": 0.25,
+                "score_rate": 0.75,
+                "elo_diff": 190.848501887865,
+            },
+        )
+
+        trainer.run(num_iterations=1)
+        assert trainer.last_eval_metrics is not None
+        assert trainer.last_eval_metrics["iteration"] == 1
+        assert trainer.last_eval_metrics["win_rate"] == 0.75
+        assert trainer.last_eval_metrics["elo_diff"] == pytest.approx(190.848501887865)
+        assert trainer.last_eval_metrics["promoted"] is True
+        assert len(trainer.eval_history) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -785,6 +851,23 @@ class TestCheckpointing:
         assert restored.config.buffer_size == 333
         assert restored.iteration == 2
         assert restored.training_step == 5
+
+    def test_checkpoint_restores_eval_history(self, device, tmp_path):
+        trainer = Trainer(config=TrainingConfig(), device=device)
+        trainer.eval_history = [
+            {"iteration": 1, "win_rate": 0.6, "elo_diff": 70.4, "promoted": True},
+            {"iteration": 2, "win_rate": 0.5, "elo_diff": 0.0, "promoted": False},
+        ]
+        trainer.last_eval_metrics = trainer.eval_history[-1]
+
+        ckpt_path = tmp_path / "eval_history.pt"
+        trainer.save_checkpoint(ckpt_path)
+
+        restored = Trainer(config=TrainingConfig(), device=device)
+        restored.load_checkpoint(ckpt_path)
+        assert len(restored.eval_history) == 2
+        assert restored.last_eval_metrics is not None
+        assert restored.last_eval_metrics["iteration"] == 2
 
 
 # ---------------------------------------------------------------------------
