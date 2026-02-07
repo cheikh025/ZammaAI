@@ -13,6 +13,13 @@ Does NOT depend on the gymnasium package itself.
 
 from __future__ import annotations
 
+if __package__ is None or __package__ == "":
+    # Allow running as a script: `python khreibga/env.py`.
+    import os
+    import sys
+
+    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import numpy as np
 
 from khreibga.board import BLACK, WHITE, BOARD_SIZE, NUM_SQUARES, display_board
@@ -270,11 +277,39 @@ if __name__ == "__main__":
     env = KhreibagaEnv()
     rng = np.random.default_rng(0)
     obs, info = env.reset()
+    step_count = 0
+    last_reward = 0.0
+    last_terminated = False
+    last_truncated = False
+    break_reason = "loop_exited_without_reason"
+
     while not env.done:
         mask = info["action_mask"]
         legal_actions = np.where(mask > 0)[0]
         if len(legal_actions) == 0:
+            break_reason = "No legal actions in mask guard"
             break
         action = rng.choice(legal_actions)
-        obs, reward, terminated, truncated, info = env.step(int(action))
+        obs, last_reward, last_terminated, last_truncated, info = env.step(int(action))
+        step_count += 1
+        if last_terminated:
+            break_reason = "terminated=True returned by env.step"
+        elif last_truncated:
+            break_reason = "truncated=True returned by env.step"
+
+    if env.done and break_reason == "loop_exited_without_reason":
+        break_reason = "env.done became True"
+
     env.render()
+    final_winner_str = {BLACK: "BLACK", WHITE: "WHITE", None: "DRAW/ONGOING"}[env.winner]
+    final_legal = int(np.sum(info["action_mask"])) if "action_mask" in info else -1
+    print("\nSecond game summary:")
+    print(f"  ended (env.done): {env.done}")
+    print(f"  winner: {final_winner_str}")
+    print(f"  total half-moves: {env.game.move_count}")
+    print(f"  loop steps played: {step_count}")
+    print(f"  break reason: {break_reason}")
+    print(f"  last reward: {last_reward}")
+    print(f"  last terminated: {last_terminated}")
+    print(f"  last truncated: {last_truncated}")
+    print(f"  legal actions in final returned mask: {final_legal}")
