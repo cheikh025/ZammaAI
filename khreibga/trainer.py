@@ -20,6 +20,7 @@ from collections import deque
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
+import time
 
 import numpy as np
 import torch
@@ -27,6 +28,11 @@ import torch.nn.functional as F
 
 from khreibga.model import KhreibagaNet, get_device, ACTION_SPACE
 from khreibga.self_play import self_play_game, evaluate_models
+
+try:
+    from torch.utils.tensorboard import SummaryWriter
+except Exception:  # pragma: no cover - depends on optional tensorboard pkg
+    SummaryWriter = None
 
 
 # ---------------------------------------------------------------------------
@@ -64,6 +70,12 @@ class TrainingConfig:
 
     # ---- Outer loop ----
     num_iterations: int = 1000
+
+    # ---- Logging ----
+    enable_tensorboard: bool = False
+    tensorboard_log_dir: str = "runs/khreibga"
+    tensorboard_run_name: str | None = None
+    tensorboard_flush_secs: int = 30
 
 
 # ---------------------------------------------------------------------------
@@ -261,6 +273,7 @@ class Trainer:
         self.training_step: int = 0
         self.eval_history: list[dict[str, float | int | bool]] = []
         self.last_eval_metrics: dict[str, float | int | bool] | None = None
+        self.tb_writer = self._create_tensorboard_writer()
 
     # ------------------------------------------------------------------
     # Main loop
@@ -279,15 +292,21 @@ class Trainer:
 
         for _ in range(n):
             self.iteration += 1
+            iter_start = time.perf_counter()
+            buffer_before = len(self.replay_buffer)
 
             # ---- 1. Self-play ----
             self._run_self_play_iteration()
+            examples_added = len(self.replay_buffer) - buffer_before
 
             # ---- 2. Training ----
+            iteration_losses: list[tuple[float, float, float]] = []
             if len(self.replay_buffer) >= cfg.batch_size:
                 for _ in range(cfg.training_steps_per_iteration):
-                    self.train_step()
                     self.training_step += 1
+                    total_loss, value_loss, policy_loss = self.train_step()
+                    iteration_losses.append((total_loss, value_loss, policy_loss))
+                    self._log_train_step(total_loss, value_loss, policy_loss)
 
             # ---- 3. Evaluation gate ----
             if self.iteration % cfg.eval_interval == 0:
@@ -327,6 +346,18 @@ class Trainer:
 
                 self.last_eval_metrics = eval_metrics
                 self.eval_history.append(eval_metrics)
+                self._log_eval_metrics(eval_metrics)
+
+            iter_duration = time.perf_counter() - iter_start
+            self._log_iteration_metrics(
+                iteration=self.iteration,
+                buffer_size=len(self.replay_buffer),
+                examples_added=examples_added,
+                train_losses=iteration_losses,
+                iteration_seconds=iter_duration,
+            )
+
+        self._flush_tensorboard()
 
     def _run_self_play_iteration(self) -> None:
         """Generate self-play data (sequential or process-parallel)."""
@@ -468,6 +499,111 @@ class Trainer:
         clone.load_state_dict(copy.deepcopy(self.model.state_dict()))
         clone.eval()
         return clone
+
+    # ------------------------------------------------------------------
+    # TensorBoard logging
+    # ------------------------------------------------------------------
+
+    def _create_tensorboard_writer(self):
+        """Create a SummaryWriter when enabled and available."""
+        cfg = self.config
+        if not cfg.enable_tensorboard:
+            return None
+        if SummaryWriter is None:
+            return None
+
+        if cfg.tensorboard_run_name:
+            log_dir = Path(cfg.tensorboard_log_dir) / cfg.tensorboard_run_name
+        else:
+            log_dir = Path(cfg.tensorboard_log_dir)
+
+        return SummaryWriter(
+            log_dir=str(log_dir),
+            flush_secs=int(cfg.tensorboard_flush_secs),
+        )
+
+    def _flush_tensorboard(self) -> None:
+        if self.tb_writer is not None:
+            self.tb_writer.flush()
+
+    def close(self) -> None:
+        """Close trainer resources (TensorBoard writer, if active)."""
+        if self.tb_writer is not None:
+            self.tb_writer.close()
+            self.tb_writer = None
+
+    def _log_train_step(
+        self,
+        total_loss: float,
+        value_loss: float,
+        policy_loss: float,
+    ) -> None:
+        if self.tb_writer is None:
+            return
+        step = self.training_step
+        self.tb_writer.add_scalar("train/total_loss", total_loss, step)
+        self.tb_writer.add_scalar("train/value_loss", value_loss, step)
+        self.tb_writer.add_scalar("train/policy_loss", policy_loss, step)
+
+    def _log_eval_metrics(self, eval_metrics: dict[str, float | int | bool]) -> None:
+        if self.tb_writer is None:
+            return
+
+        step = int(eval_metrics.get("iteration", self.iteration))
+        scalar_keys = (
+            "win_rate", "draw_rate", "loss_rate", "score_rate",
+            "elo_diff", "num_games", "wins", "losses", "draws",
+        )
+        for key in scalar_keys:
+            if key in eval_metrics:
+                value = eval_metrics[key]
+                if isinstance(value, (int, float, np.integer, np.floating)):
+                    self.tb_writer.add_scalar(f"eval/{key}", float(value), step)
+
+        promoted = 1.0 if bool(eval_metrics.get("promoted", False)) else 0.0
+        self.tb_writer.add_scalar("eval/promoted", promoted, step)
+
+    def _log_iteration_metrics(
+        self,
+        iteration: int,
+        buffer_size: int,
+        examples_added: int,
+        train_losses: list[tuple[float, float, float]],
+        iteration_seconds: float,
+    ) -> None:
+        if self.tb_writer is None:
+            return
+
+        self.tb_writer.add_scalar("iteration/index", float(iteration), iteration)
+        self.tb_writer.add_scalar("replay_buffer/size", float(buffer_size), iteration)
+        self.tb_writer.add_scalar(
+            "self_play/examples_added",
+            float(examples_added),
+            iteration,
+        )
+        self.tb_writer.add_scalar(
+            "timing/iteration_seconds",
+            float(iteration_seconds),
+            iteration,
+        )
+
+        if train_losses:
+            arr = np.array(train_losses, dtype=np.float32)
+            self.tb_writer.add_scalar(
+                "train_iter/total_loss_mean",
+                float(arr[:, 0].mean()),
+                iteration,
+            )
+            self.tb_writer.add_scalar(
+                "train_iter/value_loss_mean",
+                float(arr[:, 1].mean()),
+                iteration,
+            )
+            self.tb_writer.add_scalar(
+                "train_iter/policy_loss_mean",
+                float(arr[:, 2].mean()),
+                iteration,
+            )
 
     # ------------------------------------------------------------------
     # Checkpointing

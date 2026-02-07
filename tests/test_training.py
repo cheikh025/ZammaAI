@@ -69,6 +69,10 @@ class TestTrainingConfig:
         assert cfg.num_self_play_workers == 1
         assert cfg.self_play_worker_device == "cpu"
         assert cfg.seed is None
+        assert cfg.enable_tensorboard is False
+        assert cfg.tensorboard_log_dir == "runs/khreibga"
+        assert cfg.tensorboard_run_name is None
+        assert cfg.tensorboard_flush_secs == 30
         assert cfg.lr == 1e-3
         assert cfg.l2_reg == 1e-4
         assert cfg.batch_size == 256
@@ -167,6 +171,7 @@ class TestTrainer:
         assert isinstance(trainer.model, KhreibagaNet)
         assert isinstance(trainer.best_model, KhreibagaNet)
         assert len(trainer.replay_buffer) == 0
+        assert trainer.tb_writer is None
 
     def test_init_custom_config(self, device):
         cfg = TrainingConfig(lr=0.01, batch_size=32)
@@ -245,6 +250,91 @@ class TestTrainer:
         assert clone is not trainer.model
         for p1, p2 in zip(trainer.model.parameters(), clone.parameters()):
             assert torch.equal(p1.data, p2.data)
+
+
+class TestTensorBoardLogging:
+    @staticmethod
+    def _single_example() -> tuple[np.ndarray, np.ndarray, float]:
+        obs = np.zeros((INPUT_PLANES, BOARD_H, BOARD_W), dtype=np.float32)
+        pol = np.zeros(ACTION_SPACE, dtype=np.float32)
+        pol[0] = 1.0
+        return obs, pol, 0.0
+
+    def test_logs_scalars_and_flushes(self, device, monkeypatch):
+        class FakeWriter:
+            def __init__(self):
+                self.scalars: list[tuple[str, float, int]] = []
+                self.flushed = False
+                self.closed = False
+
+            def add_scalar(self, tag, value, step):
+                self.scalars.append((str(tag), float(value), int(step)))
+
+            def flush(self):
+                self.flushed = True
+
+            def close(self):
+                self.closed = True
+
+        fake_writer = FakeWriter()
+        monkeypatch.setattr(
+            Trainer,
+            "_create_tensorboard_writer",
+            lambda self: fake_writer,
+        )
+
+        cfg = TrainingConfig(
+            enable_tensorboard=True,
+            games_per_iteration=1,
+            batch_size=1,
+            training_steps_per_iteration=1,
+            eval_interval=1,
+            win_threshold=0.9,
+            num_iterations=1,
+        )
+        trainer = Trainer(config=cfg, device=device)
+        one = self._single_example()
+
+        monkeypatch.setattr(
+            "khreibga.trainer.self_play_game",
+            lambda *args, **kwargs: [one],
+        )
+        monkeypatch.setattr(
+            Trainer,
+            "train_step",
+            lambda self: (3.0, 1.0, 2.0),
+        )
+        monkeypatch.setattr(
+            "khreibga.trainer.evaluate_models",
+            lambda *args, **kwargs: {
+                "wins": 1,
+                "losses": 1,
+                "draws": 0,
+                "num_games": 2,
+                "win_rate": 0.5,
+                "draw_rate": 0.0,
+                "loss_rate": 0.5,
+                "score_rate": 0.5,
+                "elo_diff": 0.0,
+            },
+        )
+
+        trainer.run(num_iterations=1)
+
+        tags = {tag for tag, _, _ in fake_writer.scalars}
+        assert "train/total_loss" in tags
+        assert "train/value_loss" in tags
+        assert "train/policy_loss" in tags
+        assert "eval/win_rate" in tags
+        assert "eval/elo_diff" in tags
+        assert "eval/promoted" in tags
+        assert "replay_buffer/size" in tags
+        assert "self_play/examples_added" in tags
+        assert "timing/iteration_seconds" in tags
+        assert fake_writer.flushed is True
+
+        trainer.close()
+        assert fake_writer.closed is True
 
 
 # ---------------------------------------------------------------------------
