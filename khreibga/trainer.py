@@ -285,11 +285,19 @@ class Trainer:
         checkpoint_every: int | None = None,
         checkpoint_path: str | Path | None = None,
         checkpoint_keep_history: bool = True,
+        verbose: bool = False,
     ) -> None:
         """Internal run loop with optional periodic checkpointing."""
         cfg = self.config
         ckpt_interval = checkpoint_every if checkpoint_every is not None else 0
         ckpt_base = Path(checkpoint_path) if checkpoint_path is not None else None
+
+        if verbose:
+            print(
+                f"[train] start: iterations={n}, games/iter={cfg.games_per_iteration}, "
+                f"sims={cfg.num_simulations}, parallel={cfg.self_play_parallel}",
+                flush=True,
+            )
 
         for _ in range(n):
             self.iteration += 1
@@ -348,6 +356,15 @@ class Trainer:
                 self.last_eval_metrics = eval_metrics
                 self.eval_history.append(eval_metrics)
                 self._log_eval_metrics(eval_metrics)
+                if verbose:
+                    win_rate = float(eval_metrics.get("win_rate", 0.0))
+                    elo = eval_metrics.get("elo_diff", "n/a")
+                    promoted = bool(eval_metrics.get("promoted", False))
+                    print(
+                        f"[eval] iter={self.iteration} win_rate={win_rate:.3f} "
+                        f"elo_diff={elo} promoted={promoted}",
+                        flush=True,
+                    )
 
             iter_duration = time.perf_counter() - iter_start
             self._log_iteration_metrics(
@@ -357,6 +374,22 @@ class Trainer:
                 train_losses=iteration_losses,
                 iteration_seconds=iter_duration,
             )
+            if verbose:
+                if iteration_losses:
+                    arr = np.array(iteration_losses, dtype=np.float32)
+                    loss_msg = (
+                        f"loss={arr[:, 0].mean():.4f} "
+                        f"(v={arr[:, 1].mean():.4f}, p={arr[:, 2].mean():.4f})"
+                    )
+                else:
+                    loss_msg = "loss=n/a"
+                print(
+                    f"[iter] {self.iteration} added={examples_added} "
+                    f"buffer={len(self.replay_buffer)} "
+                    f"train_steps={len(iteration_losses)} {loss_msg} "
+                    f"time={iter_duration:.2f}s",
+                    flush=True,
+                )
 
             # ---- 4. Optional periodic checkpoint ----
             if (
@@ -365,14 +398,24 @@ class Trainer:
                 and self.iteration % ckpt_interval == 0
             ):
                 self.save_checkpoint(ckpt_base)
+                if verbose:
+                    print(f"[ckpt] saved latest: {ckpt_base}", flush=True)
                 if checkpoint_keep_history:
                     suffix = ckpt_base.suffix or ".pt"
                     snapshot = ckpt_base.with_name(
                         f"{ckpt_base.stem}_iter_{self.iteration}{suffix}"
                     )
                     self.save_checkpoint(snapshot)
+                    if verbose:
+                        print(f"[ckpt] saved snapshot: {snapshot}", flush=True)
 
         self._flush_tensorboard()
+        if verbose:
+            print(
+                f"[train] done: iteration={self.iteration} "
+                f"training_steps={self.training_step} buffer={len(self.replay_buffer)}",
+                flush=True,
+            )
 
     def run(
         self,
@@ -381,6 +424,7 @@ class Trainer:
         checkpoint_every: int | None = None,
         checkpoint_path: str | Path | None = None,
         checkpoint_keep_history: bool = True,
+        verbose: bool = False,
     ) -> None:
         """Execute the full training loop.
 
@@ -396,6 +440,8 @@ class Trainer:
         checkpoint_keep_history : bool
             If True, also writes iteration-stamped snapshots in addition to
             updating *checkpoint_path*.
+        verbose : bool
+            Print concise progress messages during training.
         """
         n = num_iterations or self.config.num_iterations
         self._run_with_optional_checkpoints(
@@ -403,6 +449,7 @@ class Trainer:
             checkpoint_every=checkpoint_every,
             checkpoint_path=checkpoint_path,
             checkpoint_keep_history=checkpoint_keep_history,
+            verbose=verbose,
         )
 
     def _run_self_play_iteration(self) -> None:

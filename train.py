@@ -44,6 +44,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Disable iteration-stamped snapshot files for periodic checkpoints.",
     )
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Reduce console output.",
+    )
 
     return parser.parse_args()
 
@@ -81,8 +86,11 @@ def main() -> int:
             checkpoint_every=args.checkpoint_interval,
             checkpoint_path=args.checkpoint_out,
             checkpoint_keep_history=not args.no_checkpoint_history,
+            verbose=not args.quiet,
         )
         trainer.save_checkpoint(args.checkpoint_out)
+        if not args.quiet:
+            print(f"[ckpt] saved final: {args.checkpoint_out}", flush=True)
     finally:
         trainer.close()
     return 0
