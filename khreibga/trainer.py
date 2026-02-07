@@ -333,7 +333,10 @@ class Trainer:
                     total_loss, value_loss, policy_loss = self.train_step()
                     iteration_losses.append((total_loss, value_loss, policy_loss))
                     self._log_train_step(total_loss, value_loss, policy_loss)
-                    if verbose:
+                    if verbose and (
+                        step_idx % 20 == 0
+                        or step_idx == cfg.training_steps_per_iteration
+                    ):
                         print(
                             f"[train-step] iter={self.iteration} "
                             f"step={step_idx}/{cfg.training_steps_per_iteration} "
