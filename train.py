@@ -81,6 +81,19 @@ def main() -> int:
     device = resolve_device(args.device)
     trainer = Trainer(config=cfg, device=device)
     try:
+        if not args.quiet:
+            print(
+                "[run] config: "
+                f"device={device} "
+                f"iterations={args.num_iterations} "
+                f"games/iter={args.games_per_iteration} "
+                f"sims={args.num_simulations} "
+                f"parallel={args.self_play_parallel} "
+                f"workers={args.num_self_play_workers} "
+                f"eval_interval={args.eval_interval} "
+                f"checkpoint_interval={args.checkpoint_interval}",
+                flush=True,
+            )
         trainer.run(
             num_iterations=args.num_iterations,
             checkpoint_every=args.checkpoint_interval,

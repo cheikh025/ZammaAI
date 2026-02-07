@@ -303,6 +303,12 @@ class Trainer:
             self.iteration += 1
             iter_start = time.perf_counter()
             buffer_before = len(self.replay_buffer)
+            if verbose:
+                print(
+                    f"[iter-start] {self.iteration}/{self.iteration + (n - (_ + 1))} "
+                    f"buffer={buffer_before}",
+                    flush=True,
+                )
 
             # ---- 1. Self-play ----
             sp_start = time.perf_counter()
@@ -505,6 +511,13 @@ class Trainer:
             and cfg.num_self_play_workers > 1
             and cfg.games_per_iteration > 1
         )
+        if verbose:
+            mode = "parallel" if use_parallel else "sequential"
+            print(
+                f"[self-play] iter={self.iteration} start "
+                f"mode={mode} games={len(game_seeds)} sims={cfg.num_simulations}",
+                flush=True,
+            )
 
         if use_parallel:
             examples = self._generate_self_play_parallel(
@@ -516,6 +529,12 @@ class Trainer:
 
         total_examples = 0
         for game_idx, seed in enumerate(game_seeds, start=1):
+            if verbose:
+                print(
+                    f"[self-play-game] iter={self.iteration} "
+                    f"start game={game_idx}/{len(game_seeds)}",
+                    flush=True,
+                )
             rng = np.random.default_rng(seed) if seed is not None else None
             examples = self_play_game(
                 self.best_model,
@@ -573,6 +592,18 @@ class Trainer:
         seed_chunks = _split_game_seeds(game_seeds, max_workers)
         if not seed_chunks:
             return []
+        if verbose:
+            print(
+                f"[self-play] iter={self.iteration} launching "
+                f"{len(seed_chunks)} workers",
+                flush=True,
+            )
+            for idx, chunk in enumerate(seed_chunks, start=1):
+                print(
+                    f"[self-play-worker] iter={self.iteration} "
+                    f"dispatch worker={idx}/{len(seed_chunks)} games={len(chunk)}",
+                    flush=True,
+                )
 
         model_state_dict = self._best_model_state_dict_cpu()
         ctx = mp.get_context("spawn")
@@ -595,6 +626,12 @@ class Trainer:
             ]
             # Consume futures in submission order for deterministic aggregation.
             for idx, (fut, chunk) in enumerate(zip(futures, seed_chunks), start=1):
+                if verbose:
+                    print(
+                        f"[self-play-worker] iter={self.iteration} "
+                        f"waiting worker={idx}/{len(seed_chunks)}",
+                        flush=True,
+                    )
                 chunk_examples = fut.result()
                 all_examples.extend(chunk_examples)
                 if verbose:
