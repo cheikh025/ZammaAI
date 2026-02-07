@@ -157,6 +157,8 @@ class MCTS:
         Set to ``0.0`` to disable noise (e.g. during evaluation).
     device : torch.device or None
         Device for NN inference.  Defaults to model's device.
+    rng : np.random.Generator or None
+        Random generator used for Dirichlet root noise.
     """
 
     def __init__(
@@ -167,6 +169,7 @@ class MCTS:
         dirichlet_alpha: float = DEFAULT_DIRICHLET_ALPHA,
         dirichlet_epsilon: float = DEFAULT_DIRICHLET_EPSILON,
         device: torch.device | None = None,
+        rng: np.random.Generator | None = None,
     ) -> None:
         self.model = model
         self.c_puct = c_puct
@@ -174,6 +177,7 @@ class MCTS:
         self.dirichlet_alpha = dirichlet_alpha
         self.dirichlet_epsilon = dirichlet_epsilon
         self.device = device or next(model.parameters()).device
+        self.rng = rng or np.random.default_rng()
 
     # ------------------------------------------------------------------
     # Main entry point
@@ -300,9 +304,7 @@ class MCTS:
         self, root: MCTSNode, legal_actions: np.ndarray,
     ) -> None:
         """Mix Dirichlet noise into root-child priors for exploration."""
-        noise = np.random.dirichlet(
-            [self.dirichlet_alpha] * len(legal_actions),
-        )
+        noise = self.rng.dirichlet([self.dirichlet_alpha] * len(legal_actions))
         eps = self.dirichlet_epsilon
         for i, a in enumerate(legal_actions):
             child = root.children[int(a)]

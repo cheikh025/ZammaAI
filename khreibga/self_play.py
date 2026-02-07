@@ -83,6 +83,7 @@ def self_play_game(
         dirichlet_alpha=dirichlet_alpha,
         dirichlet_epsilon=dirichlet_epsilon,
         device=device,
+        rng=rng,
     )
 
     history: list[tuple[np.ndarray, np.ndarray, int]] = []  # (obs, policy, player)
