@@ -18,7 +18,7 @@ import torch
 
 from khreibga.model import KhreibagaNet, ACTION_SPACE, INPUT_PLANES, BOARD_H, BOARD_W
 from khreibga.self_play import self_play_game, evaluate_models
-from khreibga.trainer import TrainingConfig, ReplayBuffer, Trainer
+from khreibga.trainer import TrainingConfig, ReplayBuffer, Trainer, _split_game_seeds
 
 
 # ---------------------------------------------------------------------------
@@ -65,6 +65,10 @@ class TestTrainingConfig:
         cfg = TrainingConfig()
         assert cfg.num_simulations == 200
         assert cfg.c_puct == 1.0
+        assert cfg.self_play_parallel is False
+        assert cfg.num_self_play_workers == 1
+        assert cfg.self_play_worker_device == "cpu"
+        assert cfg.seed is None
         assert cfg.lr == 1e-3
         assert cfg.l2_reg == 1e-4
         assert cfg.batch_size == 256
@@ -781,3 +785,88 @@ class TestCheckpointing:
         assert restored.config.buffer_size == 333
         assert restored.iteration == 2
         assert restored.training_step == 5
+
+
+# ---------------------------------------------------------------------------
+# Parallel self-play tests
+# ---------------------------------------------------------------------------
+
+class TestParallelSelfPlay:
+    @staticmethod
+    def _single_example() -> tuple[np.ndarray, np.ndarray, float]:
+        obs = np.zeros((INPUT_PLANES, BOARD_H, BOARD_W), dtype=np.float32)
+        pol = np.zeros(ACTION_SPACE, dtype=np.float32)
+        pol[0] = 1.0
+        return obs, pol, 0.0
+
+    def test_split_game_seeds_even_chunks(self):
+        chunks = _split_game_seeds([1, 2, 3, 4, 5], num_chunks=2)
+        assert chunks == [[1, 2, 3], [4, 5]]
+
+    def test_build_game_seeds_deterministic(self, device):
+        trainer = Trainer(config=TrainingConfig(seed=123), device=device)
+        trainer.iteration = 7
+        s1 = trainer._build_game_seeds(6)
+        s2 = trainer._build_game_seeds(6)
+        assert s1 == s2
+        assert all(isinstance(s, int) for s in s1)
+
+        trainer.iteration = 8
+        s3 = trainer._build_game_seeds(6)
+        assert s3 != s1
+
+    def test_parallel_self_play_uses_executor_and_fills_buffer(
+        self, device, monkeypatch,
+    ):
+        cfg = TrainingConfig(
+            games_per_iteration=5,
+            self_play_parallel=True,
+            num_self_play_workers=2,
+            seed=999,
+            batch_size=9999,       # skip training
+            eval_interval=9999,    # skip eval
+            num_iterations=1,
+        )
+        trainer = Trainer(config=cfg, device=device)
+        one = self._single_example()
+
+        monkeypatch.setattr(
+            "khreibga.trainer.self_play_game",
+            lambda *args, **kwargs: [one],
+        )
+
+        submit_calls: list[tuple] = []
+
+        class FakeFuture:
+            def __init__(self, result):
+                self._result = result
+
+            def result(self):
+                return self._result
+
+        class FakeExecutor:
+            def __init__(self, max_workers=None, mp_context=None):
+                self.max_workers = max_workers
+                self.mp_context = mp_context
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def submit(self, fn, *args):
+                submit_calls.append((fn, args))
+                return FakeFuture(fn(*args))
+
+        monkeypatch.setattr("khreibga.trainer.ProcessPoolExecutor", FakeExecutor)
+
+        trainer.run(num_iterations=1)
+
+        assert len(submit_calls) == 2
+        chunk_sizes = [len(call[1][1]) for call in submit_calls]
+        assert sorted(chunk_sizes) == [2, 3]
+        all_seeds = [seed for call in submit_calls for seed in call[1][1]]
+        assert len(all_seeds) == cfg.games_per_iteration
+        assert all(seed is not None for seed in all_seeds)
+        assert len(trainer.replay_buffer) == cfg.games_per_iteration

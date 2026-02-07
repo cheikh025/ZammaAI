@@ -15,7 +15,9 @@ Loss (from spec Section 3.3)::
 from __future__ import annotations
 
 import copy
+import multiprocessing as mp
 from collections import deque
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -42,6 +44,10 @@ class TrainingConfig:
     dirichlet_alpha: float = 0.3
     dirichlet_epsilon: float = 0.25
     games_per_iteration: int = 25
+    self_play_parallel: bool = False
+    num_self_play_workers: int = 1
+    self_play_worker_device: str = "cpu"
+    seed: int | None = None
 
     # ---- Training ----
     lr: float = 1e-3
@@ -58,6 +64,70 @@ class TrainingConfig:
 
     # ---- Outer loop ----
     num_iterations: int = 1000
+
+
+# ---------------------------------------------------------------------------
+# Replay buffer
+# ---------------------------------------------------------------------------
+
+def _split_game_seeds(
+    game_seeds: list[int | None],
+    num_chunks: int,
+) -> list[list[int | None]]:
+    """Split per-game seeds into near-even ordered chunks."""
+    if num_chunks <= 0:
+        return []
+    n = len(game_seeds)
+    if n == 0:
+        return []
+
+    base = n // num_chunks
+    rem = n % num_chunks
+    chunks: list[list[int | None]] = []
+    start = 0
+    for i in range(num_chunks):
+        size = base + (1 if i < rem else 0)
+        if size <= 0:
+            continue
+        end = start + size
+        chunks.append(game_seeds[start:end])
+        start = end
+    return chunks
+
+
+def _self_play_worker(
+    model_state_dict: dict[str, torch.Tensor],
+    game_seeds: list[int | None],
+    num_simulations: int,
+    c_puct: float,
+    temp_threshold: int,
+    dirichlet_alpha: float,
+    dirichlet_epsilon: float,
+    worker_device: str,
+) -> list[tuple[np.ndarray, np.ndarray, float]]:
+    """Run one self-play worker job (picklable for spawn-based multiprocessing)."""
+    device = torch.device(worker_device)
+
+    model = KhreibagaNet().to(device)
+    model.load_state_dict(model_state_dict)
+    model.eval()
+
+    all_examples: list[tuple[np.ndarray, np.ndarray, float]] = []
+    for seed in game_seeds:
+        rng = np.random.default_rng(seed) if seed is not None else np.random.default_rng()
+        examples = self_play_game(
+            model,
+            num_simulations=num_simulations,
+            c_puct=c_puct,
+            temp_threshold=temp_threshold,
+            dirichlet_alpha=dirichlet_alpha,
+            dirichlet_epsilon=dirichlet_epsilon,
+            device=device,
+            rng=rng,
+        )
+        all_examples.extend(examples)
+
+    return all_examples
 
 
 # ---------------------------------------------------------------------------
@@ -209,18 +279,7 @@ class Trainer:
             self.iteration += 1
 
             # ---- 1. Self-play ----
-            self.best_model.eval()
-            for _ in range(cfg.games_per_iteration):
-                examples = self_play_game(
-                    self.best_model,
-                    num_simulations=cfg.num_simulations,
-                    c_puct=cfg.c_puct,
-                    temp_threshold=cfg.temp_threshold,
-                    dirichlet_alpha=cfg.dirichlet_alpha,
-                    dirichlet_epsilon=cfg.dirichlet_epsilon,
-                    device=self.device,
-                )
-                self.replay_buffer.add_game(examples)
+            self._run_self_play_iteration()
 
             # ---- 2. Training ----
             if len(self.replay_buffer) >= cfg.batch_size:
@@ -242,6 +301,98 @@ class Trainer:
                 )
                 if win_rate > cfg.win_threshold:
                     self.best_model = self._clone_model()
+
+    def _run_self_play_iteration(self) -> None:
+        """Generate self-play data (sequential or process-parallel)."""
+        cfg = self.config
+        self.best_model.eval()
+
+        game_seeds = self._build_game_seeds(cfg.games_per_iteration)
+
+        use_parallel = (
+            cfg.self_play_parallel
+            and cfg.num_self_play_workers > 1
+            and cfg.games_per_iteration > 1
+        )
+
+        if use_parallel:
+            examples = self._generate_self_play_parallel(game_seeds)
+            self.replay_buffer.add_game(examples)
+            return
+
+        for seed in game_seeds:
+            rng = np.random.default_rng(seed) if seed is not None else None
+            examples = self_play_game(
+                self.best_model,
+                num_simulations=cfg.num_simulations,
+                c_puct=cfg.c_puct,
+                temp_threshold=cfg.temp_threshold,
+                dirichlet_alpha=cfg.dirichlet_alpha,
+                dirichlet_epsilon=cfg.dirichlet_epsilon,
+                device=self.device,
+                rng=rng,
+            )
+            self.replay_buffer.add_game(examples)
+
+    def _build_game_seeds(self, num_games: int) -> list[int | None]:
+        """Create deterministic per-game seeds for the current iteration."""
+        if num_games <= 0:
+            return []
+        if self.config.seed is None:
+            return [None] * num_games
+
+        seed_seq = np.random.SeedSequence([self.config.seed, self.iteration])
+        children = seed_seq.spawn(num_games)
+        return [
+            int(child.generate_state(1, dtype=np.uint64)[0])
+            for child in children
+        ]
+
+    def _best_model_state_dict_cpu(self) -> dict[str, torch.Tensor]:
+        """Return a CPU copy of best-model weights for process hand-off."""
+        return {
+            name: tensor.detach().cpu()
+            for name, tensor in self.best_model.state_dict().items()
+        }
+
+    def _generate_self_play_parallel(
+        self,
+        game_seeds: list[int | None],
+    ) -> list[tuple[np.ndarray, np.ndarray, float]]:
+        """Run self-play in a process pool and return aggregated examples."""
+        cfg = self.config
+        if not game_seeds:
+            return []
+
+        max_workers = max(1, min(cfg.num_self_play_workers, len(game_seeds)))
+        seed_chunks = _split_game_seeds(game_seeds, max_workers)
+        if not seed_chunks:
+            return []
+
+        model_state_dict = self._best_model_state_dict_cpu()
+        ctx = mp.get_context("spawn")
+
+        all_examples: list[tuple[np.ndarray, np.ndarray, float]] = []
+        with ProcessPoolExecutor(max_workers=max_workers, mp_context=ctx) as pool:
+            futures = [
+                pool.submit(
+                    _self_play_worker,
+                    model_state_dict,
+                    chunk,
+                    cfg.num_simulations,
+                    cfg.c_puct,
+                    cfg.temp_threshold,
+                    cfg.dirichlet_alpha,
+                    cfg.dirichlet_epsilon,
+                    cfg.self_play_worker_device,
+                )
+                for chunk in seed_chunks
+            ]
+            # Consume futures in submission order for deterministic aggregation.
+            for fut in futures:
+                all_examples.extend(fut.result())
+
+        return all_examples
 
     # ------------------------------------------------------------------
     # Single training step
