@@ -141,11 +141,18 @@ class TestSimpleMove:
 
     def test_simple_move_changes_board(self, no_capture_patches):
         game = no_capture_patches()
-        # In the initial position (no captures mocked), the only legal simple
-        # moves for BLACK are from row-1 men into the center empty sq 12.
-        # sq 7 (1,2) can move forward via (1,0) to sq 12 (2,2) which is EMPTY.
-        src = 7   # (1, 2) BLACK_MAN
-        dst = 12  # (2, 2) EMPTY
+        # Use a custom board where WHITE has moves after BLACK's turn.
+        # BLACK_MAN at sq 2 (0,2) moves forward to sq 7 (1,2).
+        # WHITE_MAN at sq 22 (4,2) can still move forward to sq 17 (3,2).
+        game.board = [EMPTY] * NUM_SQUARES
+        game.board[2] = BLACK_MAN   # (0,2)
+        game.board[22] = WHITE_MAN  # (4,2) -- has forward moves
+        from khreibga.game import compute_zobrist_hash
+        game.current_hash = compute_zobrist_hash(game.board, game.current_player)
+        game.history = {game.current_hash: 1}
+
+        src = 2   # (0, 2) BLACK_MAN
+        dst = 7   # (1, 2) EMPTY
         action = _action(src, dst)
 
         # Verify this is a legal move
@@ -214,29 +221,25 @@ class TestCapture:
 
     def test_capture_removes_enemy_piece(self):
         """Set up a simple capture scenario and verify piece removal."""
-        # Board: Black man at sq 12, White man at sq 17, landing at sq 22
-        # (2,2) -> capture (3,2) -> land (4,2)
+        # Board: Black man at sq 2, White man at sq 7, landing at sq 12
+        # (0,2) -> capture (1,2) -> land (2,2)
+        # Landing at sq 12 (row 2) avoids accidental promotion (row 4).
         board = [EMPTY] * NUM_SQUARES
-        board[12] = BLACK_MAN  # (2,2)
-        board[17] = WHITE_MAN  # (3,2) - enemy to capture
+        board[2] = BLACK_MAN    # (0,2)
+        board[7] = WHITE_MAN    # (1,2) - enemy to capture
         # Need another white piece so game doesn't end on elimination
         board[24] = WHITE_MAN
 
-        captured_sq = 17
-        new_board = board[:]
-        new_board[12] = EMPTY
-        new_board[17] = EMPTY  # captured
-        new_board[22] = BLACK_MAN  # landing
+        captured_sq = 7
 
         def mock_get_action_mask(b, player):
             if player == BLACK:
-                return _mask_from_moves([(12, 22)])
+                return _mask_from_moves([(2, 12)])
             return _mask_from_moves([])
 
         def mock_first_hops(b, player):
-            # Only for the initial call - check if piece at 12 exists
-            if player == BLACK and b[12] == BLACK_MAN:
-                return [(12, 22)]
+            if player == BLACK and b[2] == BLACK_MAN:
+                return [(2, 12)]
             return []
 
         def mock_execute_hop(b, src, dst, player):
@@ -267,11 +270,11 @@ class TestCapture:
             gs.current_hash = compute_zobrist_hash(gs.board, gs.current_player)
             gs.history[gs.current_hash] = 1
 
-            obs, mask, reward, done = gs.step(_action(12, 22))
+            obs, mask, reward, done = gs.step(_action(2, 12))
 
-            assert gs.board[12] == EMPTY  # source cleared
-            assert gs.board[17] == EMPTY  # captured piece removed
-            assert gs.board[22] == BLACK_MAN  # piece landed
+            assert gs.board[2] == EMPTY   # source cleared
+            assert gs.board[7] == EMPTY   # captured piece removed
+            assert gs.board[12] == BLACK_MAN  # piece landed (row 2, no promo)
             assert gs.half_move_clock == 0  # reset on capture
 
     def test_capture_resets_half_move_clock(self):
