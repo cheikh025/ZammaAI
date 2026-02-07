@@ -774,6 +774,77 @@ class TestTrainerRunOrchestration:
         assert trainer.last_eval_metrics["promoted"] is True
         assert len(trainer.eval_history) == 1
 
+    def test_run_periodic_checkpoint_saves_latest_and_snapshot(
+        self, device, monkeypatch, tmp_path,
+    ):
+        cfg = TrainingConfig(
+            games_per_iteration=1,
+            batch_size=9999,
+            eval_interval=9999,
+            num_iterations=3,
+        )
+        trainer = Trainer(config=cfg, device=device)
+        one = self._single_example()
+
+        monkeypatch.setattr(
+            "khreibga.trainer.self_play_game",
+            lambda *args, **kwargs: [one],
+        )
+
+        saved_paths: list[str] = []
+
+        def fake_save(self, path, extra_metadata=None):
+            saved_paths.append(str(path))
+
+        monkeypatch.setattr(Trainer, "save_checkpoint", fake_save)
+
+        base = tmp_path / "run.pt"
+        trainer.run(
+            num_iterations=3,
+            checkpoint_every=2,
+            checkpoint_path=base,
+            checkpoint_keep_history=True,
+        )
+
+        assert len(saved_paths) == 2
+        assert saved_paths[0].endswith("run.pt")
+        assert saved_paths[1].endswith("run_iter_2.pt")
+
+    def test_run_periodic_checkpoint_without_history_updates_only_latest(
+        self, device, monkeypatch, tmp_path,
+    ):
+        cfg = TrainingConfig(
+            games_per_iteration=1,
+            batch_size=9999,
+            eval_interval=9999,
+            num_iterations=2,
+        )
+        trainer = Trainer(config=cfg, device=device)
+        one = self._single_example()
+
+        monkeypatch.setattr(
+            "khreibga.trainer.self_play_game",
+            lambda *args, **kwargs: [one],
+        )
+
+        saved_paths: list[str] = []
+
+        def fake_save(self, path, extra_metadata=None):
+            saved_paths.append(str(path))
+
+        monkeypatch.setattr(Trainer, "save_checkpoint", fake_save)
+
+        base = tmp_path / "latest.pt"
+        trainer.run(
+            num_iterations=2,
+            checkpoint_every=1,
+            checkpoint_path=base,
+            checkpoint_keep_history=False,
+        )
+
+        assert len(saved_paths) == 2
+        assert all(p.endswith("latest.pt") for p in saved_paths)
+
 
 # ---------------------------------------------------------------------------
 # Additional deterministic policy/eval behavior checks

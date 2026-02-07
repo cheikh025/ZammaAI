@@ -33,6 +33,17 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument("--device", type=str, default="auto", choices=["auto", "cpu", "cuda", "mps"])
     parser.add_argument("--checkpoint-out", type=str, default="checkpoints/run_001_last.pt")
+    parser.add_argument(
+        "--checkpoint-interval",
+        type=int,
+        default=0,
+        help="Save intermediate checkpoints every N iterations (0 disables).",
+    )
+    parser.add_argument(
+        "--no-checkpoint-history",
+        action="store_true",
+        help="Disable iteration-stamped snapshot files for periodic checkpoints.",
+    )
 
     return parser.parse_args()
 
@@ -65,7 +76,12 @@ def main() -> int:
     device = resolve_device(args.device)
     trainer = Trainer(config=cfg, device=device)
     try:
-        trainer.run(num_iterations=args.num_iterations)
+        trainer.run(
+            num_iterations=args.num_iterations,
+            checkpoint_every=args.checkpoint_interval,
+            checkpoint_path=args.checkpoint_out,
+            checkpoint_keep_history=not args.no_checkpoint_history,
+        )
         trainer.save_checkpoint(args.checkpoint_out)
     finally:
         trainer.close()
@@ -74,4 +90,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

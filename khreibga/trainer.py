@@ -279,16 +279,17 @@ class Trainer:
     # Main loop
     # ------------------------------------------------------------------
 
-    def run(self, num_iterations: int | None = None) -> None:
-        """Execute the full training loop.
-
-        Parameters
-        ----------
-        num_iterations : int or None
-            Override ``config.num_iterations`` if given.
-        """
-        n = num_iterations or self.config.num_iterations
+    def _run_with_optional_checkpoints(
+        self,
+        n: int,
+        checkpoint_every: int | None = None,
+        checkpoint_path: str | Path | None = None,
+        checkpoint_keep_history: bool = True,
+    ) -> None:
+        """Internal run loop with optional periodic checkpointing."""
         cfg = self.config
+        ckpt_interval = checkpoint_every if checkpoint_every is not None else 0
+        ckpt_base = Path(checkpoint_path) if checkpoint_path is not None else None
 
         for _ in range(n):
             self.iteration += 1
@@ -357,7 +358,52 @@ class Trainer:
                 iteration_seconds=iter_duration,
             )
 
+            # ---- 4. Optional periodic checkpoint ----
+            if (
+                ckpt_base is not None
+                and ckpt_interval > 0
+                and self.iteration % ckpt_interval == 0
+            ):
+                self.save_checkpoint(ckpt_base)
+                if checkpoint_keep_history:
+                    suffix = ckpt_base.suffix or ".pt"
+                    snapshot = ckpt_base.with_name(
+                        f"{ckpt_base.stem}_iter_{self.iteration}{suffix}"
+                    )
+                    self.save_checkpoint(snapshot)
+
         self._flush_tensorboard()
+
+    def run(
+        self,
+        num_iterations: int | None = None,
+        *,
+        checkpoint_every: int | None = None,
+        checkpoint_path: str | Path | None = None,
+        checkpoint_keep_history: bool = True,
+    ) -> None:
+        """Execute the full training loop.
+
+        Parameters
+        ----------
+        num_iterations : int or None
+            Override ``config.num_iterations`` if given.
+        checkpoint_every : int or None
+            If > 0 and *checkpoint_path* is provided, saves intermediate
+            checkpoints every N iterations.
+        checkpoint_path : str or Path or None
+            Base path for periodic checkpoint writes.
+        checkpoint_keep_history : bool
+            If True, also writes iteration-stamped snapshots in addition to
+            updating *checkpoint_path*.
+        """
+        n = num_iterations or self.config.num_iterations
+        self._run_with_optional_checkpoints(
+            n,
+            checkpoint_every=checkpoint_every,
+            checkpoint_path=checkpoint_path,
+            checkpoint_keep_history=checkpoint_keep_history,
+        )
 
     def _run_self_play_iteration(self) -> None:
         """Generate self-play data (sequential or process-parallel)."""
