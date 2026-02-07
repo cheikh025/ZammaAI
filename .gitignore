@@ -2,3 +2,4 @@
 *.md
 *.pyc
 __pycache__/
+*.pt

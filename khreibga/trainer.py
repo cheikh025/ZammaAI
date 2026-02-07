@@ -66,6 +66,8 @@ class TrainingConfig:
     eval_interval: int = 50      # evaluate every N iterations
     eval_games: int = 50
     eval_simulations: int = 200
+    # Promotion threshold on score_rate (wins + 0.5 * draws).
+    # Name kept for backward compatibility with existing configs/checkpoints.
     win_threshold: float = 0.55
 
     # ---- Outer loop ----
@@ -377,21 +379,26 @@ class Trainer:
                 # returns only a float win-rate.
                 if isinstance(eval_result, dict):
                     win_rate = float(eval_result.get("win_rate", 0.0))
+                    score_rate = float(eval_result.get("score_rate", win_rate))
                     eval_metrics: dict[str, float | int | bool] = {
                         "iteration": int(self.iteration),
                         "promoted": False,
                         **eval_result,
                     }
+                    # Ensure score_rate is always present for gating/logging.
+                    eval_metrics.setdefault("score_rate", score_rate)
                 else:
                     win_rate = float(eval_result)
+                    score_rate = win_rate
                     eval_metrics = {
                         "iteration": int(self.iteration),
                         "promoted": False,
                         "num_games": int(cfg.eval_games),
                         "win_rate": float(win_rate),
+                        "score_rate": float(score_rate),
                     }
 
-                if win_rate > cfg.win_threshold:
+                if score_rate > cfg.win_threshold:
                     self.best_model = self._clone_model()
                     eval_metrics["promoted"] = True
 
@@ -400,13 +407,15 @@ class Trainer:
                 self._log_eval_metrics(eval_metrics)
                 if verbose:
                     win_rate = float(eval_metrics.get("win_rate", 0.0))
+                    score_rate = float(eval_metrics.get("score_rate", win_rate))
                     elo = eval_metrics.get("elo_diff", "n/a")
                     promoted = bool(eval_metrics.get("promoted", False))
                     wins = eval_metrics.get("wins", "n/a")
                     losses = eval_metrics.get("losses", "n/a")
                     draws = eval_metrics.get("draws", "n/a")
                     print(
-                        f"[eval] iter={self.iteration} win_rate={win_rate:.3f} "
+                        f"[eval] iter={self.iteration} "
+                        f"win_rate={win_rate:.3f} score_rate={score_rate:.3f} "
                         f"w/l/d={wins}/{losses}/{draws} "
                         f"elo_diff={elo} promoted={promoted}",
                         flush=True,

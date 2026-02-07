@@ -735,6 +735,46 @@ class TestTrainerRunOrchestration:
         trainer.run(num_iterations=1)
         assert trainer.best_model is original_best
 
+    def test_eval_gate_uses_score_rate_for_promotion(
+        self, device, monkeypatch,
+    ):
+        cfg = TrainingConfig(
+            games_per_iteration=1,
+            batch_size=9999,
+            eval_interval=1,
+            win_threshold=0.55,
+            num_iterations=1,
+        )
+        trainer = Trainer(config=cfg, device=device)
+        original_best = trainer.best_model
+        one = self._single_example()
+
+        monkeypatch.setattr(
+            "khreibga.trainer.self_play_game",
+            lambda *args, **kwargs: [one],
+        )
+        monkeypatch.setattr(
+            "khreibga.trainer.evaluate_models",
+            lambda *args, **kwargs: {
+                "wins": 25,
+                "losses": 0,
+                "draws": 25,
+                "num_games": 50,
+                "win_rate": 0.5,
+                "draw_rate": 0.5,
+                "loss_rate": 0.0,
+                "score_rate": 0.75,
+                "elo_diff": 190.848501887865,
+            },
+        )
+
+        trainer.run(num_iterations=1)
+        assert trainer.best_model is not original_best
+        assert trainer.last_eval_metrics is not None
+        assert trainer.last_eval_metrics["win_rate"] == 0.5
+        assert trainer.last_eval_metrics["score_rate"] == 0.75
+        assert trainer.last_eval_metrics["promoted"] is True
+
     def test_eval_metrics_tracked_without_affecting_gate(
         self, device, monkeypatch,
     ):
