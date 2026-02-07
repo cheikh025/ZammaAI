@@ -17,6 +17,7 @@ from __future__ import annotations
 import copy
 from collections import deque
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -128,6 +129,18 @@ class ReplayBuffer:
             np.stack(pol_list),
             np.array(val_list, dtype=np.float32),
         )
+
+    @property
+    def max_size(self) -> int:
+        """Configured maximum capacity."""
+        return int(self.buffer.maxlen or 0)
+
+    def metadata(self) -> dict[str, int]:
+        """Return lightweight serialization metadata."""
+        return {
+            "max_size": self.max_size,
+            "size": len(self.buffer),
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -278,3 +291,116 @@ class Trainer:
         clone.load_state_dict(copy.deepcopy(self.model.state_dict()))
         clone.eval()
         return clone
+
+    # ------------------------------------------------------------------
+    # Checkpointing
+    # ------------------------------------------------------------------
+
+    def save_checkpoint(
+        self,
+        path: str | Path,
+        extra_metadata: dict | None = None,
+    ) -> None:
+        """Save a training checkpoint.
+
+        Saved content:
+          - model / best_model weights
+          - optimizer state
+          - counters (iteration, training_step)
+          - TrainingConfig values
+          - replay-buffer metadata (size, max_size)
+          - optional user metadata
+        """
+        ckpt_path = Path(path)
+        ckpt_path.parent.mkdir(parents=True, exist_ok=True)
+
+        checkpoint = {
+            "version": 1,
+            "config": vars(self.config).copy(),
+            "model_state_dict": self.model.state_dict(),
+            "best_model_state_dict": self.best_model.state_dict(),
+            "optimizer_state_dict": self.optimizer.state_dict(),
+            "iteration": self.iteration,
+            "training_step": self.training_step,
+            "replay_buffer": self.replay_buffer.metadata(),
+            "device": str(self.device),
+        }
+        if extra_metadata is not None:
+            checkpoint["extra_metadata"] = extra_metadata
+
+        torch.save(checkpoint, ckpt_path)
+
+    def load_checkpoint(
+        self,
+        path: str | Path,
+        *,
+        load_optimizer: bool = True,
+    ) -> dict:
+        """Load a checkpoint into this trainer instance.
+
+        Notes
+        -----
+        - Config values from the checkpoint are applied to this instance.
+        - Replay-buffer metadata is restored as capacity; examples are not.
+
+        Returns
+        -------
+        dict
+            The raw checkpoint dict.
+        """
+        ckpt_path = Path(path)
+        checkpoint = torch.load(
+            ckpt_path,
+            map_location=self.device,
+            weights_only=False,
+        )
+
+        # Restore config first so optimizer recreation uses checkpoint params.
+        cfg_data = checkpoint.get("config", {})
+        self.config = TrainingConfig(**cfg_data)
+
+        # Ensure models exist and load weights.
+        self.model.load_state_dict(checkpoint["model_state_dict"])
+        self.best_model.load_state_dict(checkpoint["best_model_state_dict"])
+        self.model.to(self.device)
+        self.best_model.to(self.device)
+        self.best_model.eval()
+
+        # Recreate optimizer from restored config, then optionally restore
+        # full optimizer state (momenta, etc.).
+        self.optimizer = torch.optim.Adam(
+            self.model.parameters(),
+            lr=self.config.lr,
+            weight_decay=self.config.l2_reg,
+        )
+        if load_optimizer and "optimizer_state_dict" in checkpoint:
+            self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+
+        self.iteration = int(checkpoint.get("iteration", 0))
+        self.training_step = int(checkpoint.get("training_step", 0))
+
+        rb_meta = checkpoint.get("replay_buffer", {})
+        rb_max_size = int(rb_meta.get("max_size", self.config.buffer_size))
+        self.replay_buffer = ReplayBuffer(max_size=rb_max_size)
+
+        return checkpoint
+
+    @classmethod
+    def from_checkpoint(
+        cls,
+        path: str | Path,
+        device: torch.device | None = None,
+        *,
+        load_optimizer: bool = True,
+    ) -> Trainer:
+        """Create a new trainer instance from a checkpoint file."""
+        # Build from checkpoint config first, then load exact states.
+        checkpoint = torch.load(
+            Path(path),
+            map_location=device or get_device(),
+            weights_only=False,
+        )
+        cfg_data = checkpoint.get("config", {})
+        trainer = cls(config=TrainingConfig(**cfg_data), device=device)
+        trainer.load_checkpoint(path, load_optimizer=load_optimizer)
+        return trainer

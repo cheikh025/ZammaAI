@@ -694,3 +694,90 @@ class TestSelfPlayAndEvalBehavior:
             device=device,
         )
         assert win_rate == 0.5
+
+
+# ---------------------------------------------------------------------------
+# Checkpointing tests
+# ---------------------------------------------------------------------------
+
+class TestCheckpointing:
+    @staticmethod
+    def _single_example() -> tuple[np.ndarray, np.ndarray, float]:
+        obs = np.zeros((INPUT_PLANES, BOARD_H, BOARD_W), dtype=np.float32)
+        pol = np.zeros(ACTION_SPACE, dtype=np.float32)
+        pol[0] = 1.0
+        return obs, pol, 1.0
+
+    def test_save_checkpoint_writes_expected_payload(
+        self, device, tmp_path, dummy_examples,
+    ):
+        cfg = TrainingConfig(buffer_size=321, batch_size=8)
+        trainer = Trainer(config=cfg, device=device)
+        trainer.replay_buffer.add_game(dummy_examples[:10])
+        trainer.iteration = 7
+        trainer.training_step = 13
+
+        ckpt_path = tmp_path / "trainer_ckpt.pt"
+        trainer.save_checkpoint(ckpt_path, extra_metadata={"tag": "unit-test"})
+
+        assert ckpt_path.exists()
+        payload = torch.load(ckpt_path, map_location=device, weights_only=False)
+
+        assert payload["version"] == 1
+        assert payload["config"]["buffer_size"] == 321
+        assert payload["iteration"] == 7
+        assert payload["training_step"] == 13
+        assert payload["replay_buffer"]["max_size"] == 321
+        assert payload["replay_buffer"]["size"] == 10
+        assert payload["extra_metadata"]["tag"] == "unit-test"
+
+    def test_load_checkpoint_restores_state(
+        self, device, tmp_path, dummy_examples,
+    ):
+        cfg = TrainingConfig(batch_size=8, buffer_size=222)
+        trainer_a = Trainer(config=cfg, device=device)
+        trainer_a.replay_buffer.add_game(dummy_examples)
+        trainer_a.iteration = 4
+        trainer_a.training_step = 9
+
+        # Run one update so optimizer state is non-empty.
+        trainer_a.train_step()
+
+        ckpt_path = tmp_path / "resume.pt"
+        trainer_a.save_checkpoint(ckpt_path)
+
+        # Start from a mismatched trainer, then restore.
+        trainer_b = Trainer(config=TrainingConfig(batch_size=16), device=device)
+        trainer_b.load_checkpoint(ckpt_path, load_optimizer=True)
+
+        assert trainer_b.config.batch_size == 8
+        assert trainer_b.config.buffer_size == 222
+        assert trainer_b.iteration == 4
+        assert trainer_b.training_step == 9
+        assert trainer_b.replay_buffer.max_size == 222
+        assert len(trainer_b.replay_buffer) == 0  # metadata-only restore
+
+        for p_a, p_b in zip(
+            trainer_a.model.parameters(), trainer_b.model.parameters(),
+        ):
+            assert torch.allclose(p_a, p_b)
+        for p_a, p_b in zip(
+            trainer_a.best_model.parameters(), trainer_b.best_model.parameters(),
+        ):
+            assert torch.allclose(p_a, p_b)
+
+    def test_from_checkpoint_builds_ready_trainer(self, device, tmp_path):
+        trainer = Trainer(
+            config=TrainingConfig(batch_size=12, buffer_size=333),
+            device=device,
+        )
+        trainer.iteration = 2
+        trainer.training_step = 5
+        ckpt_path = tmp_path / "factory.pt"
+        trainer.save_checkpoint(ckpt_path)
+
+        restored = Trainer.from_checkpoint(ckpt_path, device=device)
+        assert restored.config.batch_size == 12
+        assert restored.config.buffer_size == 333
+        assert restored.iteration == 2
+        assert restored.training_step == 5
