@@ -614,3 +614,59 @@ class TestDiagonalCapture:
         # Check that no chain jumps diagonally to 13.
         diag_hops = [c for c in chains if c[0] == (1, 13)]
         assert diag_hops == [], f"Diagonal capture should be impossible from odd-parity square: {diag_hops}"
+
+
+# ---------------------------------------------------------------------------
+# Additional edge cases
+# ---------------------------------------------------------------------------
+
+class TestAdditionalCaptureEdges:
+    """Extra edge coverage for piece-local logic and hop execution details."""
+
+    def test_find_piece_capture_chains_returns_empty_for_non_owner_square(self):
+        board = empty_board()
+        board[12] = BLACK_MAN
+        board[7] = WHITE_MAN
+
+        assert find_piece_capture_chains(board, BLACK, 7) == []
+        assert find_piece_capture_chains(board, BLACK, 0) == []
+
+    def test_piece_local_majority_prefers_longer_chain_for_same_piece(self):
+        board = empty_board()
+        board[0] = BLACK_KING
+        board[10] = WHITE_MAN
+        board[22] = WHITE_MAN
+
+        hops = set(get_piece_capture_first_hops(board, BLACK, 0))
+        assert hops == {(0, 20)}
+
+    def test_get_capture_first_hops_deduplicates_shared_first_hop(self):
+        board = empty_board()
+        board[0] = BLACK_KING
+        board[10] = WHITE_MAN
+        board[22] = WHITE_MAN
+
+        hops = get_capture_first_hops(board, BLACK)
+        assert hops == [(0, 20)]
+
+    def test_execute_hop_removes_first_enemy_along_path(self):
+        """If multiple enemies sit on src->dst, execute_hop removes the first."""
+        board = empty_board()
+        board[0] = BLACK_KING
+        board[10] = WHITE_MAN
+        board[15] = WHITE_MAN
+
+        new_board, cap = execute_hop(board, 0, 20, BLACK)
+        assert cap == 10
+        assert new_board[10] == EMPTY
+        assert new_board[15] == WHITE_MAN
+        assert new_board[20] == BLACK_KING
+
+    def test_action_mask_falls_back_to_simple_moves_when_no_capture(self):
+        board = empty_board()
+        board[0] = BLACK_MAN
+
+        mask = get_action_mask(board, BLACK)
+        assert mask[0 * NUM_SQUARES + 5] == 1
+        assert mask[0 * NUM_SQUARES + 6] == 1
+        assert sum(mask) == 2

@@ -1036,3 +1036,81 @@ class TestEdgeCases:
         assert "GameState" in r
         assert "BLACK" in r
         assert "ongoing" in r
+
+
+# ===================================================================
+# Additional edge cases
+# ===================================================================
+
+class TestAdditionalGameEdges:
+    """Additional checks for observation planes and chain-specific masking."""
+
+    def test_observation_repetition_plane_seen_before(self, no_capture_patches):
+        gs = no_capture_patches()
+        gs.history[gs.current_hash] = 2
+
+        obs = gs.get_observation()
+        for r in range(5):
+            for c in range(5):
+                assert obs[4][r][c] == 1.0
+
+    def test_observation_move_count_plane_is_capped(self, no_capture_patches):
+        gs = no_capture_patches()
+        gs.move_count = 999
+
+        obs = gs.get_observation()
+        for r in range(5):
+            for c in range(5):
+                assert obs[6][r][c] == 1.0
+
+    def test_reset_recreates_single_history_entry(self, no_capture_patches):
+        gs = no_capture_patches()
+        gs.history[123] = 4
+        gs.move_count = 17
+        gs.done = True
+        gs.chain_piece = 12
+
+        gs.reset()
+
+        assert len(gs.history) == 1
+        assert gs.history[gs.current_hash] == 1
+        assert gs.move_count == 0
+        assert gs.done is False
+        assert gs.chain_piece is None
+
+    def test_get_action_mask_mid_chain_uses_piece_local_hops_only(self):
+        from khreibga.game import GameState
+
+        gs = GameState.__new__(GameState)
+        gs.board = [EMPTY] * NUM_SQUARES
+        gs.current_player = BLACK
+        gs.chain_piece = 12
+        gs.done = False
+
+        with patch("khreibga.game.get_piece_capture_first_hops", return_value=[(12, 2), (12, 22)]), \
+             patch("khreibga.game.captures_get_action_mask", side_effect=RuntimeError("must not be called mid-chain")):
+            mask = gs.get_action_mask()
+
+        assert mask[_action(12, 2)] == 1
+        assert mask[_action(12, 22)] == 1
+        assert sum(mask) == 2
+
+    def test_step_on_done_game_does_not_mutate_state(self, game):
+        game.done = True
+        before_board = game.board[:]
+        before_player = game.current_player
+        before_move_count = game.move_count
+        before_hash = game.current_hash
+
+        _obs, _mask, reward, done = game.step(_action(7, 12))
+
+        assert done is True
+        assert reward == 0.0
+        assert game.board == before_board
+        assert game.current_player == before_player
+        assert game.move_count == before_move_count
+        assert game.current_hash == before_hash
+
+    def test_repr_includes_chain_piece_marker(self, game):
+        game.chain_piece = 12
+        assert "chain@12" in repr(game)

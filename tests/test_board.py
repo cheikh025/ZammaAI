@@ -357,3 +357,36 @@ class TestConstants:
     def test_player_values(self):
         assert BLACK == 1
         assert WHITE == 2
+
+
+# ===================================================================
+# Additional edge cases
+# ===================================================================
+
+class TestAdditionalEdgeCases:
+    """Extra guardrails for copy semantics and graph stability."""
+
+    def test_get_ray_returns_copy(self):
+        """Mutating a returned ray must not affect internal adjacency."""
+        sq = rc_to_sq(0, 0)
+        ray = get_ray(sq, (1, 0))
+        ray.append(999)
+        assert get_ray(sq, (1, 0)) == [5, 10, 15, 20]
+
+    def test_initial_board_returns_fresh_list_each_call(self):
+        """Each call should return a new board instance."""
+        board_a = initial_board()
+        board_b = initial_board()
+        board_a[0] = EMPTY
+        assert board_b[0] == BLACK_MAN
+
+    def test_neighbors_are_unique_for_every_square(self):
+        """No square should list duplicate immediate neighbors."""
+        for sq in range(NUM_SQUARES):
+            nbrs = get_neighbors(sq)
+            assert len(nbrs) == len(set(nbrs)), f"Duplicate neighbor in sq {sq}"
+
+    def test_display_contains_column_footer(self):
+        """Board display should include the column labels footer."""
+        text = display_board(initial_board())
+        assert "0  1  2  3  4" in text

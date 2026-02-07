@@ -780,3 +780,50 @@ class TestSanity:
                 assert dst in all_reachable, (
                     f"Move ({src}->{dst}) not in adjacency graph"
                 )
+
+
+# ===================================================================
+# Additional edge cases
+# ===================================================================
+
+class TestAdditionalMoveEdges:
+    """Extra checks for ownership filtering and partial blocking."""
+
+    def test_get_player_pieces_returns_sorted_indices(self):
+        board = board_with({
+            rc_to_sq(4, 4): BLACK_KING,
+            rc_to_sq(0, 0): BLACK_MAN,
+            rc_to_sq(2, 2): BLACK_MAN,
+        })
+        assert get_player_pieces(board, BLACK) == [0, 12, 24]
+
+    def test_get_simple_moves_ignores_enemy_men(self):
+        board = board_with({rc_to_sq(2, 2): WHITE_MAN})
+        assert get_simple_moves(board, BLACK) == []
+
+    def test_king_blocked_on_one_ray_still_moves_on_others(self):
+        king_sq = rc_to_sq(2, 2)
+        blocker_sq = rc_to_sq(3, 2)
+        board = board_with({king_sq: BLACK_KING, blocker_sq: BLACK_MAN})
+
+        moves = get_king_simple_moves(board, king_sq)
+        dsts = {dst for _src, dst in moves}
+
+        assert rc_to_sq(3, 2) not in dsts
+        assert rc_to_sq(4, 2) not in dsts
+        assert rc_to_sq(2, 3) in dsts
+        assert rc_to_sq(1, 2) in dsts
+
+    def test_man_with_blocked_forward_can_still_use_open_diagonals(self):
+        sq = rc_to_sq(2, 2)
+        forward_blocker = rc_to_sq(3, 2)
+        board = board_with({
+            sq: BLACK_MAN,
+            forward_blocker: WHITE_MAN,
+        })
+
+        moves = get_man_simple_moves(board, sq, BLACK)
+        assert set(moves) == {
+            (sq, rc_to_sq(3, 1)),
+            (sq, rc_to_sq(3, 3)),
+        }
