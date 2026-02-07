@@ -305,17 +305,50 @@ class Trainer:
             buffer_before = len(self.replay_buffer)
 
             # ---- 1. Self-play ----
-            self._run_self_play_iteration()
+            sp_start = time.perf_counter()
+            self._run_self_play_iteration(
+                verbose=verbose,
+            )
+            sp_seconds = time.perf_counter() - sp_start
             examples_added = len(self.replay_buffer) - buffer_before
+            if verbose:
+                print(
+                    f"[self-play] iter={self.iteration} done "
+                    f"examples={examples_added} time={sp_seconds:.2f}s",
+                    flush=True,
+                )
 
             # ---- 2. Training ----
             iteration_losses: list[tuple[float, float, float]] = []
+            train_start = time.perf_counter()
             if len(self.replay_buffer) >= cfg.batch_size:
-                for _ in range(cfg.training_steps_per_iteration):
+                for step_idx in range(1, cfg.training_steps_per_iteration + 1):
                     self.training_step += 1
                     total_loss, value_loss, policy_loss = self.train_step()
                     iteration_losses.append((total_loss, value_loss, policy_loss))
                     self._log_train_step(total_loss, value_loss, policy_loss)
+                    if verbose:
+                        print(
+                            f"[train-step] iter={self.iteration} "
+                            f"step={step_idx}/{cfg.training_steps_per_iteration} "
+                            f"global_step={self.training_step} "
+                            f"loss={total_loss:.4f} "
+                            f"(v={value_loss:.4f}, p={policy_loss:.4f})",
+                            flush=True,
+                        )
+            elif verbose:
+                print(
+                    f"[train] iter={self.iteration} skipped "
+                    f"(buffer={len(self.replay_buffer)} < batch={cfg.batch_size})",
+                    flush=True,
+                )
+            train_seconds = time.perf_counter() - train_start
+            if verbose:
+                print(
+                    f"[train] iter={self.iteration} done "
+                    f"steps={len(iteration_losses)} time={train_seconds:.2f}s",
+                    flush=True,
+                )
 
             # ---- 3. Evaluation gate ----
             if self.iteration % cfg.eval_interval == 0:
@@ -360,8 +393,12 @@ class Trainer:
                     win_rate = float(eval_metrics.get("win_rate", 0.0))
                     elo = eval_metrics.get("elo_diff", "n/a")
                     promoted = bool(eval_metrics.get("promoted", False))
+                    wins = eval_metrics.get("wins", "n/a")
+                    losses = eval_metrics.get("losses", "n/a")
+                    draws = eval_metrics.get("draws", "n/a")
                     print(
                         f"[eval] iter={self.iteration} win_rate={win_rate:.3f} "
+                        f"w/l/d={wins}/{losses}/{draws} "
                         f"elo_diff={elo} promoted={promoted}",
                         flush=True,
                     )
@@ -441,7 +478,7 @@ class Trainer:
             If True, also writes iteration-stamped snapshots in addition to
             updating *checkpoint_path*.
         verbose : bool
-            Print concise progress messages during training.
+            Print detailed progress messages during training.
         """
         n = num_iterations or self.config.num_iterations
         self._run_with_optional_checkpoints(
@@ -452,7 +489,11 @@ class Trainer:
             verbose=verbose,
         )
 
-    def _run_self_play_iteration(self) -> None:
+    def _run_self_play_iteration(
+        self,
+        *,
+        verbose: bool = False,
+    ) -> None:
         """Generate self-play data (sequential or process-parallel)."""
         cfg = self.config
         self.best_model.eval()
@@ -466,11 +507,15 @@ class Trainer:
         )
 
         if use_parallel:
-            examples = self._generate_self_play_parallel(game_seeds)
+            examples = self._generate_self_play_parallel(
+                game_seeds,
+                verbose=verbose,
+            )
             self.replay_buffer.add_game(examples)
             return
 
-        for seed in game_seeds:
+        total_examples = 0
+        for game_idx, seed in enumerate(game_seeds, start=1):
             rng = np.random.default_rng(seed) if seed is not None else None
             examples = self_play_game(
                 self.best_model,
@@ -483,6 +528,14 @@ class Trainer:
                 rng=rng,
             )
             self.replay_buffer.add_game(examples)
+            total_examples += len(examples)
+            if verbose:
+                print(
+                    f"[self-play-game] iter={self.iteration} "
+                    f"game={game_idx}/{len(game_seeds)} "
+                    f"examples={len(examples)} total_examples={total_examples}",
+                    flush=True,
+                )
 
     def _build_game_seeds(self, num_games: int) -> list[int | None]:
         """Create deterministic per-game seeds for the current iteration."""
@@ -508,6 +561,8 @@ class Trainer:
     def _generate_self_play_parallel(
         self,
         game_seeds: list[int | None],
+        *,
+        verbose: bool = False,
     ) -> list[tuple[np.ndarray, np.ndarray, float]]:
         """Run self-play in a process pool and return aggregated examples."""
         cfg = self.config
@@ -539,8 +594,16 @@ class Trainer:
                 for chunk in seed_chunks
             ]
             # Consume futures in submission order for deterministic aggregation.
-            for fut in futures:
-                all_examples.extend(fut.result())
+            for idx, (fut, chunk) in enumerate(zip(futures, seed_chunks), start=1):
+                chunk_examples = fut.result()
+                all_examples.extend(chunk_examples)
+                if verbose:
+                    print(
+                        f"[self-play-worker] iter={self.iteration} "
+                        f"worker={idx}/{len(seed_chunks)} "
+                        f"games={len(chunk)} examples={len(chunk_examples)}",
+                        flush=True,
+                    )
 
         return all_examples
 
