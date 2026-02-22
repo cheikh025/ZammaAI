@@ -45,6 +45,16 @@ def parse_args() -> argparse.Namespace:
         help="Disable iteration-stamped snapshot files for periodic checkpoints.",
     )
     parser.add_argument(
+        "--checkpoint-in",
+        type=str,
+        default=None,
+        help=(
+            "Resume training from this checkpoint. "
+            "Model weights, optimizer state, and iteration counter are restored. "
+            "--num-iterations is treated as the total target; remaining = target - saved_iteration."
+        ),
+    )
+    parser.add_argument(
         "--quiet",
         action="store_true",
         help="Reduce console output.",
@@ -79,13 +89,47 @@ def main() -> int:
     )
 
     device = resolve_device(args.device)
-    trainer = Trainer(config=cfg, device=device)
+
+    if args.checkpoint_in:
+        # Resume: restore model, optimizer, and iteration counter from checkpoint.
+        trainer = Trainer.from_checkpoint(args.checkpoint_in, device=device)
+        # Apply CLI overrides so the user can change settings on resume.
+        trainer.config.num_simulations          = args.num_simulations
+        trainer.config.games_per_iteration      = args.games_per_iteration
+        trainer.config.self_play_parallel       = args.self_play_parallel
+        trainer.config.num_self_play_workers    = args.num_self_play_workers
+        trainer.config.eval_interval            = args.eval_interval
+        trainer.config.eval_games               = args.eval_games
+        trainer.config.eval_simulations         = args.eval_simulations
+        trainer.config.enable_tensorboard       = args.enable_tensorboard
+        trainer.config.tensorboard_log_dir      = args.tensorboard_log_dir
+        trainer.config.tensorboard_run_name     = args.tensorboard_run_name
+        # Recreate TensorBoard writer with the (possibly updated) settings.
+        trainer.tb_writer = trainer._create_tensorboard_writer()
+        # Compute how many iterations remain to reach the total target.
+        remaining = max(0, args.num_iterations - trainer.iteration)
+        num_iterations_to_run = remaining
+        if not args.quiet:
+            print(
+                f"[resume] loaded checkpoint: {args.checkpoint_in} "
+                f"(iteration={trainer.iteration}, step={trainer.training_step})",
+                flush=True,
+            )
+            print(
+                f"[resume] target={args.num_iterations} "
+                f"done={trainer.iteration} remaining={remaining}",
+                flush=True,
+            )
+    else:
+        trainer = Trainer(config=cfg, device=device)
+        num_iterations_to_run = args.num_iterations
+
     try:
         if not args.quiet:
             print(
                 "[run] config: "
                 f"device={device} "
-                f"iterations={args.num_iterations} "
+                f"iterations={num_iterations_to_run} "
                 f"games/iter={args.games_per_iteration} "
                 f"sims={args.num_simulations} "
                 f"parallel={args.self_play_parallel} "
@@ -95,7 +139,7 @@ def main() -> int:
                 flush=True,
             )
         trainer.run(
-            num_iterations=args.num_iterations,
+            num_iterations=num_iterations_to_run,
             checkpoint_every=args.checkpoint_interval,
             checkpoint_path=args.checkpoint_out,
             checkpoint_keep_history=not args.no_checkpoint_history,
