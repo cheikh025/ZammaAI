@@ -98,6 +98,6 @@ def get_ai_action(game: GameState, mode: str, simulations: int = 200) -> int:
     """Dispatch to the correct policy based on session mode."""
     if mode == "hvr":
         return random_action(game)
-    if mode == "hvai":
+    if mode in ("hvai", "aivh"):
         return mcts_action(game, simulations)
     raise ValueError(f"Mode {mode!r} has no AI policy.")

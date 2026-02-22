@@ -60,6 +60,41 @@ function buildLines(): Line[] {
 const LINES = buildLines()
 
 // ---------------------------------------------------------------------------
+// King crown helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a 3-spike crown polygon points string centred at (cx, cy).
+ *
+ *        *           ← center spike (tallest)
+ *      /   \
+ *    *       *       ← side spikes
+ *   / \_   _/ \
+ *  /    \_/    \
+ * |             |    ← base band
+ * |_____________|
+ */
+function crownPoints(cx: number, cy: number, r: number): string {
+  const hw  = r * 0.43          // half-width of crown
+  const bot = cy + r * 0.27     // flat base bottom
+  const base= cy + r * 0.03     // base top / spike roots
+  const vly = cy - r * 0.05     // valley between spikes
+  const sh  = cy - r * 0.27     // side spike tip
+  const ch  = cy - r * 0.42     // center spike tip (tallest)
+
+  const pts: [number, number][] = [
+    [cx - hw, bot],              // bottom-left
+    [cx - hw, sh],               // left spike tip
+    [cx - hw * 0.45, vly],      // left inner valley
+    [cx,      ch ],              // center spike tip
+    [cx + hw * 0.45, vly],      // right inner valley
+    [cx + hw, sh],               // right spike tip
+    [cx + hw, bot],              // bottom-right
+  ]
+  return pts.map(([x, y]) => `${x.toFixed(2)},${y.toFixed(2)}`).join(' ')
+}
+
+// ---------------------------------------------------------------------------
 // Piece sub-component
 // ---------------------------------------------------------------------------
 
@@ -74,10 +109,11 @@ function Piece({ piece, cx, cy, onClick }: PieceProps) {
   const isBlack = piece === 1 || piece === 2
   const isKing  = piece === 2 || piece === 4
 
-  const fill       = isBlack ? '#1a0f0a' : '#f5ede0'
-  const stroke     = isBlack ? '#5a3a28' : '#9e8060'
-  const sheen      = isBlack ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.55)'
-  const ringStroke = isBlack ? '#d4af37' : '#7a5c2e'
+  const fill      = isBlack ? '#1a0f0a' : '#f5ede0'
+  const stroke    = isBlack ? '#5a3a28' : '#9e8060'
+  const sheen     = isBlack ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.55)'
+  const crownFill = isBlack ? '#d4af37' : '#7a5c2e'
+  const crownEdge = isBlack ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.20)'
 
   return (
     <g onClick={onClick} style={{ cursor: 'pointer' }}>
@@ -87,14 +123,13 @@ function Piece({ piece, cx, cy, onClick }: PieceProps) {
       <circle cx={cx} cy={cy} r={PIECE_R} fill={fill} stroke={stroke} strokeWidth={2} />
       {/* Sheen highlight */}
       <circle cx={cx - 9} cy={cy - 9} r={9} fill={sheen} />
-      {/* King ring */}
+      {/* King crown */}
       {isKing && (
-        <circle
-          cx={cx} cy={cy}
-          r={PIECE_R * 0.52}
-          fill="none"
-          stroke={ringStroke}
-          strokeWidth={2.5}
+        <polygon
+          points={crownPoints(cx, cy, PIECE_R)}
+          fill={crownFill}
+          stroke={crownEdge}
+          strokeWidth={0.8}
         />
       )}
     </g>

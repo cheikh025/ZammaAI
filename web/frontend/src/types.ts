@@ -20,7 +20,7 @@ export interface GameState {
   legal_actions_count: number
 }
 
-export type GameMode = 'hvh' | 'hvr' | 'hvai'
+export type GameMode = 'hvh' | 'hvr' | 'hvai' | 'aivh'
 
 export interface MoveEntry {
   src: number

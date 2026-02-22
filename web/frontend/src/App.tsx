@@ -43,10 +43,11 @@ function SetupScreen({ onStart, loading, error }: SetupProps) {
               <option value="hvh">Human vs Human</option>
               <option value="hvr">Human vs Random AI</option>
               <option value="hvai">Human vs MCTS AI</option>
+              <option value="aivh">MCTS AI vs Human (AI plays first)</option>
             </select>
           </div>
 
-          {mode === 'hvai' && (
+          {(mode === 'hvai' || mode === 'aivh') && (
             <div className="form-group">
               <label className="form-label">
                 MCTS Simulations

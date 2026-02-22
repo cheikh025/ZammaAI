@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 
 class CreateGameRequest(BaseModel):
-    mode: Literal["hvh", "hvr", "hvai"] = "hvh"
+    mode: Literal["hvh", "hvr", "hvai", "aivh"] = "hvh"
     ai_simulations: int = Field(200, ge=1, le=5000)
 
 

@@ -86,7 +86,7 @@ class KhreibagaEnv:
         2: opponent's men
         3: opponent's kings
         4: repetition flag (1.0 if position seen before)
-        5: colour flag (1.0 if current player is BLACK, else 0.0)
+        5: first-mover flag (1.0 if current player is the first mover of this game, else 0.0)
         6: move count (t / 200, capped at 1.0)
 
     Action Space

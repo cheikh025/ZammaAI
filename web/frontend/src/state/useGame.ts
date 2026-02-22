@@ -22,8 +22,15 @@ function legalDests(mask: number[], src: number): Set<number> {
   return s
 }
 
+function aiPlayer(mode: GameMode): 1 | 2 | null {
+  if (mode === 'hvr' || mode === 'hvai') return 2
+  if (mode === 'aivh') return 1
+  return null
+}
+
 function needsAi(gs: GameState, mode: GameMode): boolean {
-  return !gs.done && mode !== 'hvh' && gs.current_player === 2
+  const ap = aiPlayer(mode)
+  return !gs.done && ap !== null && gs.current_player === ap
 }
 
 function entryFromAction(action: number, player: 1 | 2, moveCount: number): MoveEntry {
@@ -85,10 +92,11 @@ export function useGame(): GameHook {
         let current = gs
         try {
           do {
+            const movedBy = current.current_player
             const next = await api.aiMove(current.session_id)
             // Log each hop the AI makes
             if (next.last_action !== null) {
-              const e = entryFromAction(next.last_action, 2, next.move_count)
+              const e = entryFromAction(next.last_action, movedBy, next.move_count)
               setMoveLog((prev) => [...prev, e])
             }
             current = next

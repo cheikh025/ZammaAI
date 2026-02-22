@@ -118,7 +118,8 @@ class GameState:
 
     def __init__(self) -> None:
         self.board: List[int] = initial_board()
-        self.current_player: int = BLACK  # Black moves first
+        self.current_player: int = BLACK  # Black moves first by default
+        self.first_mover: int = self.current_player  # who made move 1 this game
         self.chain_piece: Optional[int] = None  # sq of piece mid-chain, or None
         self.half_move_clock: int = 0  # for 50-move rule
         self.move_count: int = 0  # total half-moves played
@@ -422,8 +423,11 @@ class GameState:
         # Repetition value: 1 if current hash has appeared before (count > 1)
         rep_val = 1.0 if self.history.get(self.current_hash, 0) > 1 else 0.0
 
-        # Colour plane value
-        colour_val = 1.0 if self.current_player == BLACK else 0.0
+        # Plane 5: 1.0 if the current player is the first mover of this game,
+        # 0.0 if they are the second mover.  This is colour-agnostic: the same
+        # strategy is learned for "first mover" regardless of which piece colour
+        # happens to open.
+        colour_val = 1.0 if self.current_player == getattr(self, "first_mover", BLACK) else 0.0
 
         # Move count plane value
         mc_val = min(self.move_count / _MAX_STEPS, 1.0)
@@ -472,6 +476,7 @@ class GameState:
         new = GameState.__new__(GameState)
         new.board = self.board[:]
         new.current_player = self.current_player
+        new.first_mover = self.first_mover
         new.chain_piece = self.chain_piece
         new.half_move_clock = self.half_move_clock
         new.move_count = self.move_count

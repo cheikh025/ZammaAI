@@ -9,7 +9,9 @@
       "Bash(sleep 2:*)",
       "Bash(netstat -ano)",
       "Bash(xargs -I{} taskkill //PID {} //F)",
-      "Bash(cd /c/Users/cheikh/Desktop/ZammaAI && python - <<'EOF'\nfrom pathlib import Path\nimport torch\n\nckpt_dir = Path\\(\"checkpoints\"\\)\nfiles = sorted\\(ckpt_dir.glob\\(\"*.pt\"\\), key=lambda p: p.stat\\(\\).st_mtime\\)\n\nfor f in files:\n    ckpt = torch.load\\(f, map_location=\"cpu\", weights_only=False\\)\n    mtime = f.stat\\(\\).st_mtime\n    from datetime import datetime\n    dt = datetime.fromtimestamp\\(mtime\\).strftime\\(\"%Y-%m-%d %H:%M:%S\"\\)\n    print\\(f\"File:     {f.name}\"\\)\n    print\\(f\"Modified: {dt}\"\\)\n    print\\(f\"Keys:     {list\\(ckpt.keys\\(\\)\\)}\"\\)\n    if \"iteration\" in ckpt:\n        print\\(f\"Iteration:{ckpt['iteration']}\"\\)\n    print\\(\\)\n\nprint\\(f\"→ SELECTED: {files[-1].name}  \\(most recently modified\\)\"\\)\nEOF)"
+      "Bash(cd /c/Users/cheikh/Desktop/ZammaAI && python - <<'EOF'\nfrom pathlib import Path\nimport torch\n\nckpt_dir = Path\\(\"checkpoints\"\\)\nfiles = sorted\\(ckpt_dir.glob\\(\"*.pt\"\\), key=lambda p: p.stat\\(\\).st_mtime\\)\n\nfor f in files:\n    ckpt = torch.load\\(f, map_location=\"cpu\", weights_only=False\\)\n    mtime = f.stat\\(\\).st_mtime\n    from datetime import datetime\n    dt = datetime.fromtimestamp\\(mtime\\).strftime\\(\"%Y-%m-%d %H:%M:%S\"\\)\n    print\\(f\"File:     {f.name}\"\\)\n    print\\(f\"Modified: {dt}\"\\)\n    print\\(f\"Keys:     {list\\(ckpt.keys\\(\\)\\)}\"\\)\n    if \"iteration\" in ckpt:\n        print\\(f\"Iteration:{ckpt['iteration']}\"\\)\n    print\\(\\)\n\nprint\\(f\"→ SELECTED: {files[-1].name}  \\(most recently modified\\)\"\\)\nEOF)",
+      "Bash(grep:*)",
+      "mcp__ide__getDiagnostics"
     ]
   }
 }

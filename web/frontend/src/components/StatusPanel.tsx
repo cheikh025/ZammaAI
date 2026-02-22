@@ -5,6 +5,7 @@ const MODE_LABEL: Record<GameMode, string> = {
   hvh: 'Human vs Human',
   hvr: 'Human vs Random AI',
   hvai: 'Human vs MCTS AI',
+  aivh: 'MCTS AI vs Human',
 }
 const REASON_LABEL: Record<string, string> = {
   elimination: 'Elimination',
