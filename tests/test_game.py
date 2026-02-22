@@ -473,12 +473,87 @@ class TestMultiStepChainIntegration:
 # ===================================================================
 
 class TestPromotion:
-    """Test man promotion to king."""
+    """Test man promotion to king (corners-only Khreibaga rule)."""
 
-    def test_black_man_promotes_on_row4(self, no_capture_patches):
+    def test_black_man_promotes_on_left_corner(self, no_capture_patches):
         GS = no_capture_patches
         gs = GS()
-        # Place a black man at row 3, col 2 (sq 17) with empty at row 4, col 2 (sq 22)
+        # Black man at (3,0)=sq15 moves forward to corner (4,0)=sq20
+        gs.board = [EMPTY] * NUM_SQUARES
+        gs.board[15] = BLACK_MAN  # (3, 0)
+        gs.board[0] = WHITE_MAN   # keep opponent alive
+        from khreibga.game import compute_zobrist_hash
+        gs.current_hash = compute_zobrist_hash(gs.board, gs.current_player)
+        gs.history = {gs.current_hash: 1}
+
+        action = _action(15, 20)  # move to corner (4,0)
+        mask = gs.get_action_mask()
+        assert mask[action] == 1
+
+        gs.step(action)
+        assert gs.board[20] == BLACK_KING, "Black man should promote on left corner sq 20"
+
+    def test_black_man_promotes_on_right_corner(self, no_capture_patches):
+        GS = no_capture_patches
+        gs = GS()
+        # Black man at (3,4)=sq19 moves forward to corner (4,4)=sq24
+        gs.board = [EMPTY] * NUM_SQUARES
+        gs.board[19] = BLACK_MAN  # (3, 4)
+        gs.board[0] = WHITE_MAN   # keep opponent alive
+        from khreibga.game import compute_zobrist_hash
+        gs.current_hash = compute_zobrist_hash(gs.board, gs.current_player)
+        gs.history = {gs.current_hash: 1}
+
+        action = _action(19, 24)  # move to corner (4,4)
+        mask = gs.get_action_mask()
+        assert mask[action] == 1
+
+        gs.step(action)
+        assert gs.board[24] == BLACK_KING, "Black man should promote on right corner sq 24"
+
+    def test_white_man_promotes_on_left_corner(self, no_capture_patches):
+        GS = no_capture_patches
+        gs = GS()
+        # White man at (1,0)=sq5 moves forward (row decreases) to corner (0,0)=sq0
+        gs.board = [EMPTY] * NUM_SQUARES
+        gs.board[5] = WHITE_MAN   # (1, 0)
+        gs.board[24] = BLACK_MAN  # keep opponent alive
+        gs.current_player = WHITE
+        from khreibga.game import compute_zobrist_hash
+        gs.current_hash = compute_zobrist_hash(gs.board, gs.current_player)
+        gs.history = {gs.current_hash: 1}
+
+        action = _action(5, 0)  # move to corner (0,0)
+        mask = gs.get_action_mask()
+        assert mask[action] == 1
+
+        gs.step(action)
+        assert gs.board[0] == WHITE_KING, "White man should promote on left corner sq 0"
+
+    def test_white_man_promotes_on_right_corner(self, no_capture_patches):
+        GS = no_capture_patches
+        gs = GS()
+        # White man at (1,4)=sq9 moves forward to corner (0,4)=sq4
+        gs.board = [EMPTY] * NUM_SQUARES
+        gs.board[9] = WHITE_MAN   # (1, 4)
+        gs.board[20] = BLACK_MAN  # keep opponent alive
+        gs.current_player = WHITE
+        from khreibga.game import compute_zobrist_hash
+        gs.current_hash = compute_zobrist_hash(gs.board, gs.current_player)
+        gs.history = {gs.current_hash: 1}
+
+        action = _action(9, 4)  # move to corner (0,4)
+        mask = gs.get_action_mask()
+        assert mask[action] == 1
+
+        gs.step(action)
+        assert gs.board[4] == WHITE_KING, "White man should promote on right corner sq 4"
+
+    def test_black_man_does_NOT_promote_on_middle_of_row4(self, no_capture_patches):
+        """Dead zone: squares 21, 22, 23 on row 4 must NOT promote."""
+        GS = no_capture_patches
+        gs = GS()
+        # Black man at (3,2)=sq17 moves to (4,2)=sq22 -- middle of row 4
         gs.board = [EMPTY] * NUM_SQUARES
         gs.board[17] = BLACK_MAN  # (3, 2)
         gs.board[0] = WHITE_MAN   # keep opponent alive
@@ -486,17 +561,18 @@ class TestPromotion:
         gs.current_hash = compute_zobrist_hash(gs.board, gs.current_player)
         gs.history = {gs.current_hash: 1}
 
-        action = _action(17, 22)  # move to row 4
+        action = _action(17, 22)  # move to middle sq 22
         mask = gs.get_action_mask()
         assert mask[action] == 1
 
         gs.step(action)
-        assert gs.board[22] == BLACK_KING, "Black man should promote to king on row 4"
+        assert gs.board[22] == BLACK_MAN, "Black man must NOT promote on middle square 22"
 
-    def test_white_man_promotes_on_row0(self, no_capture_patches):
+    def test_white_man_does_NOT_promote_on_middle_of_row0(self, no_capture_patches):
+        """Dead zone: squares 1, 2, 3 on row 0 must NOT promote."""
         GS = no_capture_patches
         gs = GS()
-        # White man at row 1, col 2 (sq 7), move to row 0, col 2 (sq 2)
+        # White man at (1,2)=sq7 moves to (0,2)=sq2 -- middle of row 0
         gs.board = [EMPTY] * NUM_SQUARES
         gs.board[7] = WHITE_MAN  # (1, 2)
         gs.board[24] = BLACK_MAN  # keep opponent alive
@@ -505,12 +581,12 @@ class TestPromotion:
         gs.current_hash = compute_zobrist_hash(gs.board, gs.current_player)
         gs.history = {gs.current_hash: 1}
 
-        action = _action(7, 2)  # move to row 0
+        action = _action(7, 2)  # move to middle sq 2
         mask = gs.get_action_mask()
         assert mask[action] == 1
 
         gs.step(action)
-        assert gs.board[2] == WHITE_KING, "White man should promote to king on row 0"
+        assert gs.board[2] == WHITE_MAN, "White man must NOT promote on middle square 2"
 
 
 class TestPromotionDeniedMidChain:

@@ -65,6 +65,14 @@ _PROMO_ROW: Dict[int, int] = {
     WHITE: 0,               # Row 0
 }
 
+# Promotion squares (corners only -- Khreibaga rule).
+# A man must land on one of these two corner squares to become a King.
+# Landing on the three middle squares of the back row does NOT promote.
+_PROMO_SQUARES: Dict[int, set] = {
+    BLACK: {rc_to_sq(BOARD_SIZE - 1, 0), rc_to_sq(BOARD_SIZE - 1, BOARD_SIZE - 1)},  # sq 20, 24
+    WHITE: {rc_to_sq(0, 0), rc_to_sq(0, BOARD_SIZE - 1)},                            # sq 0, 4
+}
+
 # Piece type mappings
 _PLAYER_MAN: Dict[int, int] = {BLACK: BLACK_MAN, WHITE: WHITE_MAN}
 _PLAYER_KING: Dict[int, int] = {BLACK: BLACK_KING, WHITE: WHITE_KING}
@@ -298,13 +306,17 @@ class GameState:
     # ------------------------------------------------------------------
 
     def _check_promotion(self, sq: int) -> None:
-        """Promote a man to king if it ended its turn on the promotion rank."""
-        piece = self.board[sq]
-        r, _ = sq_to_rc(sq)
+        """Promote a man to king if it ended its turn on a promotion corner.
 
-        if piece == BLACK_MAN and r == _PROMO_ROW[BLACK]:
+        Khreibaga rule: only the two corner squares of the opponent's back
+        row are promotion squares.  The three middle squares are a "dead
+        zone" where the man stays unpromoted.
+        """
+        piece = self.board[sq]
+
+        if piece == BLACK_MAN and sq in _PROMO_SQUARES[BLACK]:
             self.board[sq] = BLACK_KING
-        elif piece == WHITE_MAN and r == _PROMO_ROW[WHITE]:
+        elif piece == WHITE_MAN and sq in _PROMO_SQUARES[WHITE]:
             self.board[sq] = WHITE_KING
 
     # ------------------------------------------------------------------
