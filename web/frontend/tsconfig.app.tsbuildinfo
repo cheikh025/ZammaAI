@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/types.ts","./src/api/client.ts","./src/components/board.tsx","./src/components/gamemodal.tsx","./src/components/movehistory.tsx","./src/components/statuspanel.tsx","./src/state/usegame.ts"],"version":"5.9.3"}

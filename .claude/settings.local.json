@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd /c/Users/cheikh/Desktop/ZammaAI/web/frontend && npm install 2>&1)",
+      "Bash(cd /c/Users/cheikh/Desktop/ZammaAI/web/frontend && npx tsc -b --noEmit 2>&1)",
+      "Bash(cd /c/Users/cheikh/Desktop/ZammaAI/web/frontend && npx vite build 2>&1)",
+      "Bash(cd /c/Users/cheikh/Desktop/ZammaAI && python -c \"from web.backend.app.main import app; print\\('OK — routes:', [r.path for r in app.routes]\\)\" 2>&1)",
+      "Bash(cd /c/Users/cheikh/Desktop/ZammaAI && python - <<'EOF'\nfrom web.backend.app.services.session import session_manager\nfrom web.backend.app.services.serializer import session_to_payload, compute_terminal_reason\nfrom web.backend.app.services.ai import random_action\n\n# Create a HvR session\nsid, session = session_manager.create\\(\"hvr\", 50\\)\npayload = session_to_payload\\(sid, session\\)\nprint\\(\"Created session:\", sid[:8], \"...\"\\)\nprint\\(\"Board len:\", len\\(payload[\"board\"]\\)\\)\nprint\\(\"Action mask len:\", len\\(payload[\"action_mask\"]\\)\\)\nprint\\(\"Legal actions:\", payload[\"legal_actions_count\"]\\)\nprint\\(\"Current player:\", payload[\"current_player\"]\\)\n\n# Make a random human move \\(player 1 = BLACK\\)\nmask = session.game.get_action_mask\\(\\)\nlegal = [i for i, m in enumerate\\(mask\\) if m]\naction = legal[0]\nsession.last_action = action\nsession.game.step\\(action\\)\npayload2 = session_to_payload\\(sid, session\\)\nprint\\(\"\\\\nAfter human move:\"\\)\nprint\\(\"Current player:\", payload2[\"current_player\"]\\)\nprint\\(\"Last action:\", payload2[\"last_action\"]\\)\nprint\\(\"Done:\", payload2[\"done\"]\\)\n\n# Make an AI move \\(random policy\\)\nai_action = random_action\\(session.game\\)\nsession.last_action = ai_action\nsession.game.step\\(ai_action\\)\npayload3 = session_to_payload\\(sid, session\\)\nprint\\(\"\\\\nAfter AI move:\"\\)\nprint\\(\"Current player:\", payload3[\"current_player\"]\\)\nprint\\(\"Done:\", payload3[\"done\"]\\)\nprint\\(\"Terminal reason:\", payload3[\"terminal_reason\"]\\)\nprint\\(\"\\\\nSmoke test PASSED\"\\)\nEOF)",
+      "Bash(sleep 2:*)",
+      "Bash(netstat -ano)",
+      "Bash(xargs -I{} taskkill //PID {} //F)",
+      "Bash(cd /c/Users/cheikh/Desktop/ZammaAI && python - <<'EOF'\nfrom pathlib import Path\nimport torch\n\nckpt_dir = Path\\(\"checkpoints\"\\)\nfiles = sorted\\(ckpt_dir.glob\\(\"*.pt\"\\), key=lambda p: p.stat\\(\\).st_mtime\\)\n\nfor f in files:\n    ckpt = torch.load\\(f, map_location=\"cpu\", weights_only=False\\)\n    mtime = f.stat\\(\\).st_mtime\n    from datetime import datetime\n    dt = datetime.fromtimestamp\\(mtime\\).strftime\\(\"%Y-%m-%d %H:%M:%S\"\\)\n    print\\(f\"File:     {f.name}\"\\)\n    print\\(f\"Modified: {dt}\"\\)\n    print\\(f\"Keys:     {list\\(ckpt.keys\\(\\)\\)}\"\\)\n    if \"iteration\" in ckpt:\n        print\\(f\"Iteration:{ckpt['iteration']}\"\\)\n    print\\(\\)\n\nprint\\(f\"→ SELECTED: {files[-1].name}  \\(most recently modified\\)\"\\)\nEOF)"
+    ]
+  }
+}
