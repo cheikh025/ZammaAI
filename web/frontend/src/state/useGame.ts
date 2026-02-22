@@ -126,7 +126,7 @@ export function useGame(): GameHook {
   // -------------------------------------------------------------------------
 
   const startGame = useCallback(
-    async (m: GameMode, sims = 200) => {
+    async (m: GameMode, sims = 10) => {
       setLoading(true)
       setError(null)
       setMoveLog([])

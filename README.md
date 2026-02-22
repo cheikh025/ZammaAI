@@ -103,7 +103,7 @@ Common options:
 |------|---------|-------------|
 | `--num-iterations` | 200 | Total training iterations |
 | `--games-per-iteration` | 25 | Self-play games per iteration |
-| `--num-simulations` | 200 | MCTS simulations per move |
+| `--num-simulations` | 10 | MCTS simulations per move |
 | `--device` | auto | `auto`, `cpu`, `cuda`, or `mps` |
 | `--checkpoint-out` | `checkpoints/run_001_last.pt` | Where to save the model |
 | `--enable-tensorboard` | off | Log metrics to TensorBoard |

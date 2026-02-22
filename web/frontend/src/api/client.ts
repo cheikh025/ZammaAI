@@ -2,7 +2,7 @@ import type { GameState, GameMode } from '../types'
 
 const BASE = '/api'
 
-export async function createGame(mode: GameMode, aiSimulations = 200): Promise<GameState> {
+export async function createGame(mode: GameMode, aiSimulations = 10): Promise<GameState> {
   const res = await fetch(`${BASE}/games`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

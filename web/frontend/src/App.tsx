@@ -18,7 +18,7 @@ interface SetupProps {
 
 function SetupScreen({ onStart, loading, error }: SetupProps) {
   const [mode, setMode] = useState<GameMode>('hvh')
-  const [sims, setSims] = useState(200)
+  const [sims, setSims] = useState(10)
 
   return (
     <div className="setup-screen">
@@ -113,7 +113,7 @@ export default function App() {
 
   // Persist mode/sims so modal "rematch" button uses same settings
   const [lastMode, setLastMode] = useState<GameMode>('hvh')
-  const [lastSims, setLastSims] = useState(200)
+  const [lastSims, setLastSims] = useState(10)
 
   const handleStart = (m: GameMode, sims: number) => {
     setLastMode(m)
