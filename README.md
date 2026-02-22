@@ -1,6 +1,6 @@
 # Khreibga Zero
 
-AlphaZero-style reinforcement learning agent for **Khreibaga** — a traditional Mauritanian board game played on a 5×5 Alquerque grid.
+AlphaZero-style reinforcement learning agent for **Khreibaga**  a traditional Mauritanian board game played on a 5×5 Alquerque grid.
 
 ---
 
