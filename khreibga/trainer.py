@@ -20,6 +20,7 @@ from collections import deque
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
+import random
 import time
 
 import numpy as np
@@ -398,7 +399,15 @@ class Trainer:
                         "score_rate": float(score_rate),
                     }
 
-                if score_rate > cfg.win_threshold:
+                if score_rate >= cfg.win_threshold:
+                    promote = True
+                elif score_rate <= 0.40:
+                    promote = False
+                else:
+                    promote_prob = (score_rate - 0.40) / (cfg.win_threshold - 0.40)
+                    promote = random.random() < promote_prob
+
+                if promote:
                     self.best_model = self._clone_model()
                     eval_metrics["promoted"] = True
 

@@ -22,6 +22,24 @@ class MoveRequest(BaseModel):
         raise ValueError("Provide 'action' or both 'src' and 'dst'.")
 
 
+class EvaluationResponse(BaseModel):
+    session_id: str
+    value: float
+    current_player: int
+
+
+class HintAction(BaseModel):
+    action: int
+    src: int
+    dst: int
+    visit_share: float
+
+
+class HintResponse(BaseModel):
+    session_id: str
+    hints: list[HintAction]
+
+
 class GameStateResponse(BaseModel):
     session_id: str
     board: list[int]

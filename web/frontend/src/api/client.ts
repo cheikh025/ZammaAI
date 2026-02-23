@@ -52,6 +52,40 @@ export async function deleteGame(sessionId: string): Promise<void> {
   await fetch(`${BASE}/games/${sessionId}`, { method: 'DELETE' })
 }
 
+// ---------------------------------------------------------------------------
+// AI Insights
+// ---------------------------------------------------------------------------
+
+export interface EvaluationData {
+  session_id: string
+  value: number
+  current_player: number
+}
+
+export interface HintAction {
+  action: number
+  src: number
+  dst: number
+  visit_share: number
+}
+
+export interface HintData {
+  session_id: string
+  hints: HintAction[]
+}
+
+export async function evaluatePosition(sessionId: string): Promise<EvaluationData> {
+  const res = await fetch(`${BASE}/games/${sessionId}/evaluate`, { method: 'POST' })
+  if (!res.ok) throw new Error(await extractError(res))
+  return res.json()
+}
+
+export async function getHints(sessionId: string): Promise<HintData> {
+  const res = await fetch(`${BASE}/games/${sessionId}/hint`, { method: 'POST' })
+  if (!res.ok) throw new Error(await extractError(res))
+  return res.json()
+}
+
 async function extractError(res: Response): Promise<string> {
   try {
     const body = await res.json()

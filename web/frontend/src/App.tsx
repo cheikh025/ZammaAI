@@ -1,9 +1,13 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useGame } from './state/useGame'
+import { useInsights } from './state/useInsights'
 import { Board } from './components/Board'
 import { StatusPanel } from './components/StatusPanel'
 import { MoveHistory } from './components/MoveHistory'
 import { GameModal } from './components/GameModal'
+import { EvalBar } from './components/EvalBar'
+import { HintOverlay } from './components/HintOverlay'
+import { MoveFeedback } from './components/MoveFeedback'
 import type { GameMode } from './types'
 
 // ---------------------------------------------------------------------------
@@ -111,6 +115,51 @@ export default function App() {
     clickSquare,
   } = useGame()
 
+  const insights = useInsights()
+
+  // Track state for move detection
+  const prevMoveCount = useRef<number>(0)
+  const prevAiThinking = useRef<boolean>(false)
+  const humanClickedRef = useRef<boolean>(false)
+
+  // Wrap clickSquare to flag human moves (set synchronously before any async/state batching)
+  const handleSquareClick = (sq: number) => {
+    humanClickedRef.current = true
+    clickSquare(sq)
+  }
+
+  // Detect human moves via move_count changes
+  useEffect(() => {
+    if (!gameState) return
+    const mc = gameState.move_count
+    if (mc !== prevMoveCount.current && humanClickedRef.current) {
+      // move_count changed after a human click — skip mid-chain hops
+      if (gameState.chain_piece === null) {
+        insights.onPositionChange(gameState.session_id, gameState.current_player, gameState.done, true)
+        humanClickedRef.current = false
+      }
+    }
+    prevMoveCount.current = mc
+  }, [gameState?.move_count]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Detect AI-finished: aiThinking went true→false
+  useEffect(() => {
+    if (!gameState) return
+    if (prevAiThinking.current && !aiThinking) {
+      insights.onPositionChange(gameState.session_id, gameState.current_player, gameState.done, false)
+      humanClickedRef.current = false
+    }
+    prevAiThinking.current = aiThinking
+  }, [aiThinking]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Catch-up eval fetch when toggling eval bar or feedback ON mid-game
+  useEffect(() => {
+    if (!gameState || gameState.done) return
+    if ((insights.showEvalBar || insights.showFeedback) && !insights.evaluation) {
+      insights.onPositionChange(gameState.session_id, gameState.current_player, gameState.done, false)
+    }
+  }, [insights.showEvalBar, insights.showFeedback]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Persist mode/sims so modal "rematch" button uses same settings
   const [lastMode, setLastMode] = useState<GameMode>('hvh')
   const [lastSims, setLastSims] = useState(10)
@@ -118,7 +167,21 @@ export default function App() {
   const handleStart = (m: GameMode, sims: number) => {
     setLastMode(m)
     setLastSims(sims)
+    insights.clearInsights()
+    prevMoveCount.current = 0
     startGame(m, sims)
+  }
+
+  const handleLeave = () => {
+    insights.clearInsights()
+    prevMoveCount.current = 0
+    leaveGame()
+  }
+
+  const handleReset = () => {
+    insights.clearInsights()
+    prevMoveCount.current = 0
+    resetGame()
   }
 
   if (!gameState) {
@@ -142,14 +205,14 @@ export default function App() {
         <div className="header-actions">
           <button
             className="btn-secondary btn-sm"
-            onClick={resetGame}
+            onClick={handleReset}
             disabled={loading || aiThinking}
           >
             Restart
           </button>
           <button
             className="btn-ghost btn-sm"
-            onClick={leaveGame}
+            onClick={handleLeave}
           >
             ← Menu
           </button>
@@ -158,19 +221,28 @@ export default function App() {
 
       <main className="game-layout">
         <section className="board-area">
-          <div className="board-wrapper">
-            <Board
-              gameState={gameState}
-              selectedSq={selectedSq}
-              sources={sources}
-              dests={dests}
-              onSquareClick={clickSquare}
-            />
-            {(loading || aiThinking) && (
-              <div className="board-overlay">
-                <span className="spinner-large" />
-              </div>
+          <div className="board-container">
+            {insights.showEvalBar && (
+              <EvalBar evaluation={insights.evaluation} />
             )}
+            <div className="board-wrapper" style={{ position: 'relative' }}>
+              <Board
+                gameState={gameState}
+                selectedSq={selectedSq}
+                sources={sources}
+                dests={dests}
+                onSquareClick={handleSquareClick}
+                hintOverlay={insights.showHints && insights.hints.length > 0
+                  ? <HintOverlay hints={insights.hints} />
+                  : undefined
+                }
+              />
+              {(loading || aiThinking) && (
+                <div className="board-overlay">
+                  <span className="spinner-large" />
+                </div>
+              )}
+            </div>
           </div>
         </section>
 
@@ -179,10 +251,26 @@ export default function App() {
             gameState={gameState}
             mode={mode}
             aiThinking={aiThinking}
+            showEvalBar={insights.showEvalBar}
+            showHints={insights.showHints}
+            showFeedback={insights.showFeedback}
+            onToggleEvalBar={insights.toggleEvalBar}
+            onToggleHints={insights.toggleHints}
+            onToggleFeedback={insights.toggleFeedback}
+            onRequestHints={() => gameState && insights.requestHints(gameState.session_id)}
+            hintsLoading={insights.hintsLoading}
           />
           <MoveHistory moveLog={moveLog} />
         </aside>
       </main>
+
+      {insights.showFeedback && (
+        <MoveFeedback
+          evaluation={insights.evaluation}
+          prevEvaluation={insights.prevEvaluation}
+          trigger={insights.feedbackTrigger}
+        />
+      )}
 
       {error && (
         <div className="error-bar">
@@ -194,8 +282,8 @@ export default function App() {
       {gameState.done && (
         <GameModal
           gameState={gameState}
-          onRematch={() => startGame(lastMode, lastSims)}
-          onNewGame={leaveGame}
+          onRematch={() => handleStart(lastMode, lastSims)}
+          onNewGame={handleLeave}
         />
       )}
     </div>

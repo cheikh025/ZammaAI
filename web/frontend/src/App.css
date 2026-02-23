@@ -509,6 +509,192 @@ select:focus, input:focus { border-color: var(--accent); }
 }
 
 /* ============================================================
+   Board container (eval bar + board side-by-side)
+   ============================================================ */
+
+.board-container {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  max-width: 470px;
+  width: 100%;
+}
+
+/* ============================================================
+   Eval bar
+   ============================================================ */
+
+.eval-bar {
+  width: 32px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+}
+
+.eval-bar-black {
+  background: #1a0f0a;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  transition: height 0.5s ease;
+  position: relative;
+}
+
+.eval-bar-white {
+  background: #f5ede0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  transition: height 0.5s ease;
+  position: relative;
+}
+
+.eval-label {
+  font-size: 0.6rem;
+  font-weight: 700;
+  padding: 2px 0;
+}
+
+.eval-bar-black .eval-label { color: #f5ede0; }
+.eval-bar-white .eval-label { color: #1a0f0a; }
+
+/* ============================================================
+   Move feedback toast
+   ============================================================ */
+
+.move-feedback-toast {
+  position: fixed;
+  top: 64px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 4px solid #95a5a6;
+  border-radius: 8px;
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  z-index: 150;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  min-width: 200px;
+  max-width: 320px;
+  pointer-events: none;
+}
+
+.feedback-symbol {
+  font-size: 1.4rem;
+  font-weight: 900;
+  min-width: 28px;
+  text-align: center;
+}
+
+.feedback-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.feedback-body strong {
+  font-size: 0.85rem;
+  color: var(--text);
+}
+
+.feedback-comment {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+@keyframes toast-fade-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+@keyframes toast-fade-out {
+  from { opacity: 1; transform: translateX(-50%) translateY(0); }
+  to   { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+}
+
+.toast-in {
+  animation: toast-fade-in 0.2s ease forwards;
+}
+
+.toast-out {
+  animation: toast-fade-out 0.4s ease forwards;
+}
+
+/* ============================================================
+   AI Insights toggles
+   ============================================================ */
+
+.panel-subtitle {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.toggle-label {
+  font-size: 0.82rem;
+  color: var(--text);
+}
+
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 36px;
+  height: 20px;
+  cursor: pointer;
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+
+.toggle-slider {
+  position: absolute;
+  inset: 0;
+  background: var(--border);
+  border-radius: 10px;
+  transition: background 0.2s;
+}
+
+.toggle-slider::before {
+  content: '';
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  left: 2px;
+  top: 2px;
+  background: var(--text);
+  border-radius: 50%;
+  transition: transform 0.2s;
+}
+
+.toggle-switch input:checked + .toggle-slider {
+  background: var(--accent);
+}
+
+.toggle-switch input:checked + .toggle-slider::before {
+  transform: translateX(16px);
+}
+
+/* ============================================================
    Responsive
    ============================================================ */
 

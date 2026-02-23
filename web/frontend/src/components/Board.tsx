@@ -1,22 +1,13 @@
+import type { ReactNode } from 'react'
 import type { GameState } from '../types'
+import { CELL, PAD, SVG, sqXY } from './boardGeometry'
 
 // ---------------------------------------------------------------------------
-// Board geometry
+// Board geometry (shared constants imported from boardGeometry.ts)
 // ---------------------------------------------------------------------------
-
-const CELL = 80       // pixels between adjacent points
-const PAD  = 50       // padding around the grid
-const SVG  = 4 * CELL + 2 * PAD  // 420
 
 const PIECE_R = 28    // piece radius
 const HIT_R   = PIECE_R + 6  // clickable area radius
-
-/** Convert square index (0-24) to SVG (x, y). Row 0 = bottom of screen. */
-function sqXY(sq: number): [number, number] {
-  const r = Math.floor(sq / 5)
-  const c = sq % 5
-  return [PAD + c * CELL, PAD + (4 - r) * CELL]
-}
 
 // ---------------------------------------------------------------------------
 // Precompute board lines (done once at module load)
@@ -146,9 +137,10 @@ interface BoardProps {
   sources: Set<number>
   dests: Set<number>
   onSquareClick: (sq: number) => void
+  hintOverlay?: ReactNode
 }
 
-export function Board({ gameState, selectedSq, sources, dests, onSquareClick }: BoardProps) {
+export function Board({ gameState, selectedSq, sources, dests, onSquareClick, hintOverlay }: BoardProps) {
   const { board, chain_piece, done } = gameState
 
   return (
@@ -253,6 +245,9 @@ export function Board({ gameState, selectedSq, sources, dests, onSquareClick }: 
           />
         )
       })}
+
+      {/* Hint arrows overlay */}
+      {hintOverlay}
     </svg>
   )
 }

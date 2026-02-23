@@ -18,9 +18,22 @@ interface Props {
   gameState: GameState
   mode: GameMode
   aiThinking: boolean
+  showEvalBar: boolean
+  showHints: boolean
+  showFeedback: boolean
+  onToggleEvalBar: () => void
+  onToggleHints: () => void
+  onToggleFeedback: () => void
+  onRequestHints: () => void
+  hintsLoading: boolean
 }
 
-export function StatusPanel({ gameState, mode, aiThinking }: Props) {
+export function StatusPanel({
+  gameState, mode, aiThinking,
+  showEvalBar, showHints, showFeedback,
+  onToggleEvalBar, onToggleHints, onToggleFeedback,
+  onRequestHints, hintsLoading,
+}: Props) {
   const {
     current_player,
     done,
@@ -90,6 +103,45 @@ export function StatusPanel({ gameState, mode, aiThinking }: Props) {
             </div>
           )}
         </div>
+      )}
+
+      <div className="divider" />
+
+      <h3 className="panel-subtitle">AI Insights</h3>
+
+      <div className="toggle-row">
+        <span className="toggle-label">Eval Bar</span>
+        <label className="toggle-switch">
+          <input type="checkbox" checked={showEvalBar} onChange={onToggleEvalBar} />
+          <span className="toggle-slider" />
+        </label>
+      </div>
+
+      <div className="toggle-row">
+        <span className="toggle-label">Move Feedback</span>
+        <label className="toggle-switch">
+          <input type="checkbox" checked={showFeedback} onChange={onToggleFeedback} />
+          <span className="toggle-slider" />
+        </label>
+      </div>
+
+      <div className="toggle-row">
+        <span className="toggle-label">Hints</span>
+        <label className="toggle-switch">
+          <input type="checkbox" checked={showHints} onChange={onToggleHints} />
+          <span className="toggle-slider" />
+        </label>
+      </div>
+
+      {showHints && (
+        <button
+          className="btn-secondary btn-sm"
+          style={{ marginTop: 6, width: '100%' }}
+          onClick={onRequestHints}
+          disabled={aiThinking || done || hintsLoading}
+        >
+          {hintsLoading ? 'Thinking…' : 'Show Hint'}
+        </button>
       )}
     </div>
   )

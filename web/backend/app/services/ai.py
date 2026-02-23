@@ -94,6 +94,56 @@ def mcts_action(game: GameState, simulations: int = 200) -> int:
     return select_action(visits, temperature=0.0)
 
 
+def evaluate_position(game: GameState) -> float:
+    """Single NN forward pass, returns value in [-1,+1] from current player's perspective."""
+    from khreibga.model import predict
+
+    model, device = _load_model()
+    obs = np.array(game.get_observation(), dtype=np.float32)
+    mask = np.array(game.get_action_mask(), dtype=np.float32)
+
+    _, values = predict(model, [obs], [mask], device=device)
+    return float(values[0])
+
+
+def hint_actions(game: GameState, simulations: int = 50) -> list[dict]:
+    """Lightweight MCTS, returns top 3 moves with visit shares."""
+    from khreibga.mcts import MCTS
+
+    model, device = _load_model()
+
+    env = KhreibagaEnv()
+    env.game = game.clone()
+
+    mcts = MCTS(
+        model,
+        num_simulations=simulations,
+        dirichlet_epsilon=0.25,
+        device=device,
+    )
+    visits = mcts.search(env)  # np.ndarray shape (625,)
+
+    total = float(visits.sum())
+    if total == 0:
+        return []
+
+    # Get indices of top 3 by visit count
+    top_indices = np.argsort(visits)[::-1][:3]
+    hints = []
+    for action in top_indices:
+        action = int(action)
+        count = float(visits[action])
+        if count == 0:
+            break
+        hints.append({
+            "action": action,
+            "src": action // 25,
+            "dst": action % 25,
+            "visit_share": round(count / total, 4),
+        })
+    return hints
+
+
 def get_ai_action(game: GameState, mode: str, simulations: int = 200) -> int:
     """Dispatch to the correct policy based on session mode."""
     if mode == "hvr":

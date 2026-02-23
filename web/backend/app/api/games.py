@@ -3,10 +3,13 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from ..schemas.game import CreateGameRequest, MoveRequest, GameStateResponse
+from ..schemas.game import (
+    CreateGameRequest, MoveRequest, GameStateResponse,
+    EvaluationResponse, HintResponse,
+)
 from ..services.session import session_manager
 from ..services.serializer import session_to_payload, compute_terminal_reason
-from ..services.ai import get_ai_action
+from ..services.ai import get_ai_action, evaluate_position, hint_actions
 
 router = APIRouter(prefix="/games")
 
@@ -126,6 +129,52 @@ def ai_move(session_id: str):
         session.terminal_reason = compute_terminal_reason(session.game)
 
     return session_to_payload(session_id, session)
+
+
+# ---------------------------------------------------------------------------
+# POST /api/games/{session_id}/evaluate  — NN position evaluation
+# ---------------------------------------------------------------------------
+
+@router.post("/{session_id}/evaluate", response_model=EvaluationResponse)
+def evaluate(session_id: str):
+    session, err = _get_session_or_404(session_id)
+    if err:
+        return err
+
+    game = session.game
+    if game.done:
+        # Return definitive value without NN call
+        if game.winner is None:
+            value = 0.0
+        elif game.winner == game.current_player:
+            value = 1.0
+        else:
+            value = -1.0
+    else:
+        value = evaluate_position(game)
+
+    return EvaluationResponse(
+        session_id=session_id,
+        value=value,
+        current_player=game.current_player,
+    )
+
+
+# ---------------------------------------------------------------------------
+# POST /api/games/{session_id}/hint  — top moves from lightweight MCTS
+# ---------------------------------------------------------------------------
+
+@router.post("/{session_id}/hint", response_model=HintResponse)
+def hint(session_id: str):
+    session, err = _get_session_or_404(session_id)
+    if err:
+        return err
+
+    if session.game.done:
+        return _err(409, "GAME_ALREADY_OVER", "The game has already ended.")
+
+    hints = hint_actions(session.game)
+    return HintResponse(session_id=session_id, hints=hints)
 
 
 # ---------------------------------------------------------------------------
