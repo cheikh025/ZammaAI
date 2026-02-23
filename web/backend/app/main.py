@@ -22,6 +22,24 @@ DIST = Path(__file__).parents[2] / "frontend" / "dist"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Warm up the model at startup so the first AI move has no cold-start delay.
+    # This loads torch, instantiates KhreibagaNet, reads the checkpoint, and runs
+    # one dummy forward pass to trigger PyTorch kernel JIT compilation.
+    def _warmup():
+        try:
+            import torch
+            from .services.ai import _load_model
+            model, device = _load_model()
+            dummy = torch.zeros(1, 7, 5, 5, device=device)
+            with torch.no_grad():
+                model(dummy)
+            print("[startup] Model warmed up.")
+        except Exception as exc:
+            print(f"[startup] Model warmup failed (non-fatal): {exc}")
+
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, _warmup)
+
     task = asyncio.create_task(session_manager.cleanup_loop())
     try:
         yield
