@@ -1,6 +1,6 @@
 # Khreibga Zero
 
-AlphaZero-style reinforcement learning agent for **Khreibaga** — a traditional Mauritanian board game played on a 5×5 Alquerque grid.
+AlphaZero-style reinforcement learning agent for **Khreibaga**  a traditional Mauritanian board game played on a 5×5 Alquerque grid.
 
 ---
 
@@ -33,7 +33,7 @@ cd ../..
 
 ## Running the Web Interface
 
-The game is played through a browser — a FastAPI backend serves the game logic and a React frontend renders the board.
+The game is played through a browser a FastAPI backend serves the game logic and a React frontend renders the board.
 
 ### Development mode (two terminals)
 
